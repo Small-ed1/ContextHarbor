@@ -11,12 +11,14 @@ python -m venv .venv && source .venv/bin/activate && pip install -r requirements
 
 ### Syntax Checking
 ```bash
-python -m compileall agent          # Check all Python files
+make fmt                       # Verify syntax with compileall
+python -m compileall agent     # Direct command
 ```
 
 ### Testing
 ```bash
-python -m pytest tests/ -v                              # All tests
+make test                     # Quick test run (pytest)
+python -m pytest tests/ -v     # All tests with output
 python -m pytest tests/test_router.py -v                # Specific file
 python -m pytest tests/test_router.py::TestRouter::test_override -v  # Single test
 python -m pytest tests/ -k "test_router" -v             # Pattern match
