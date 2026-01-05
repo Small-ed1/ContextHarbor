@@ -75,24 +75,26 @@ import RichTextMessage from './RichTextMessage';
 Use React.memo for performance, proper cleanup in useEffect, and displayName for debugging.
 
 #### Naming Conventions
-- **Components**: PascalCase (`MyComponent`)
-- **Functions**: camelCase (`handleClick`, `formatDate`)
-- **Constants**: UPPER_SNAKE_CASE (`MAX_RETRY_COUNT`)
-- **Files**: PascalCase for components, camelCase for utilities
-- **CSS Classes**: kebab-case (`my-component`)
+Use React.memo for performance, proper cleanup in useEffect, and displayName for debugging.
+
+#### Naming Conventions
+- Components: PascalCase (`MyComponent`)
+- Functions: camelCase (`handleClick`)
+- Constants: UPPER_SNAKE_CASE (`MAX_RETRY_COUNT`)
+- CSS Classes: kebab-case (`my-component`)
 
 #### Error Handling
 ```javascript
 const [error, setError] = useState(null);
 const [loading, setLoading] = useState(false);
 
-const handleAsyncOperation = async () => {
+const handleAsync = async () => {
   try {
     setLoading(true);
     setError(null);
     const result = await someAsyncCall();
   } catch (err) {
-    console.error('Operation failed:', err);
+    console.error('Failed:', err);
     setError(err.message);
   } finally {
     setLoading(false);
@@ -100,36 +102,16 @@ const handleAsyncOperation = async () => {
 };
 ```
 
+#### Naming Conventions
+- Components: PascalCase (`MyComponent`)
+- Functions: camelCase (`handleClick`)
+- Constants: UPPER_SNAKE_CASE (`MAX_RETRY_COUNT`)
+- CSS Classes: kebab-case (`my-component`)
+
 ### Python (Backend)
-
-#### Imports
-```python
-# Standard library first
-from __future__ import annotations
-import json
-from typing import Any, Optional, List, Dict
-
-# Third-party
-import httpx
-from fastapi import FastAPI, HTTPException
-
-# Local imports
-from .utils import helper_function
-```
 
 #### Type Hints & Error Handling
 ```python
-def process_data(data: Dict[str, Any]) -> Optional[List[str]]:
-    """Process input data and return results."""
-    if not data:
-        return None
-
-    results: List[str] = []
-    for key, value in data.items():
-        if isinstance(value, str):
-            results.append(value.upper())
-    return results
-
 async def api_endpoint(request: UserRequest):
     try:
         if not request.name:
@@ -143,70 +125,43 @@ async def api_endpoint(request: UserRequest):
 ```
 
 #### Naming Conventions
-- **Classes**: PascalCase (`UserManager`, `APIClient`)
-- **Functions/Methods**: snake_case (`process_data`, `get_user_by_id`)
-- **Constants**: UPPER_SNAKE_CASE (`DEFAULT_TIMEOUT`)
-- **Files**: snake_case (`user_manager.py`)
-- **Variables**: snake_case (`user_data`)
+- Classes: PascalCase (`UserManager`, `APIClient`)
+- Functions/Methods: snake_case (`process_data`, `get_user_by_id`)
+- Constants: UPPER_SNAKE_CASE (`DEFAULT_TIMEOUT`)
+- Files: snake_case (`user_manager.py`)
+- Variables: snake_case (`user_data`)
 
 ### General Guidelines
 
 #### File Organization
 ```
 frontend/src/
-├── components/          # Reusable components
-├── hooks/              # Custom React hooks
-├── utils/              # Utility functions
-├── api/                # API client functions
-├── styles/             # Global styles/CSS
-└── __tests__/          # Test files
+├── components/     # Reusable components
+├── utils/         # Utility functions
+└── __tests__/     # Test files
 
 backend/
-├── routes/             # API route handlers
-├── models/             # Pydantic models
-├── utils/              # Utility functions
-├── services/           # Business logic
-└── tests/              # Test files
+├── routes/        # API route handlers
+├── models/        # Pydantic models
+└── tests/         # Test files
 ```
 
 #### Commit Messages
 ```
 feat: add user authentication
-fix: resolve memory leak in chat sessions
-docs: update API documentation
-style: format code with black
-refactor: simplify component state management
-test: add unit tests for user validation
+fix: resolve memory leak
+docs: update API docs
+style: format code
+refactor: simplify logic
+test: add unit tests
 ```
 
-#### Documentation
-```python
-def complex_function(param1: str, param2: Optional[int] = None) -> Dict[str, Any]:
-    """
-    Process complex data with multiple parameters.
-
-    Args:
-        param1: Required string parameter
-        param2: Optional integer parameter
-
-    Returns:
-        Dictionary containing processed results
-    """
-```
-
-#### Security Considerations
+#### Security & Performance
 - Validate all user inputs
-- Implement proper authentication/authorization
-- Sanitize HTML content in React components
 - Use HTTPS in production
-- Log security-relevant events
-
-#### Performance Guidelines
+- Sanitize HTML content
 - Use React.memo for expensive components
 - Implement proper loading states
-- Cache API responses appropriately
-- Use lazy loading for route components
-- Optimize bundle size with code splitting
-- Monitor memory usage in long-running operations
+- Cache API responses
 
 This guide ensures consistency across the codebase and helps agents produce high-quality, maintainable code.
