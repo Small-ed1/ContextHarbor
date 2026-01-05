@@ -217,6 +217,7 @@ function App() {
                     <Chat
                       sessionId={currentChatSessionId}
                       onBack={() => setCurrentChatSessionId(null)}
+                      selectedModel={selectedModel}
                     />
                   ) : (
                     <ChatSessions

@@ -1,9 +1,11 @@
 from __future__ import annotations
-from enum import Enum
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class Mode(str, Enum):
@@ -83,6 +85,7 @@ class Source:
     @staticmethod
     def normalize_url(url: str) -> str:
         from urllib.parse import urlparse
+
         parsed = urlparse(url)
         normalized = parsed._replace(query="", fragment="")
         return normalized.geturl()
@@ -90,6 +93,7 @@ class Source:
     @staticmethod
     def generate_id(tool: str, locator: str, title: str) -> str:
         import hashlib
+
         normalized = Source.normalize_url(locator)
         content = f"{tool}:{normalized}:{title}"
         return hashlib.md5(content.encode()).hexdigest()[:16]
@@ -163,9 +167,15 @@ class BudgetConfig:
         elif mode_str == "EDIT":
             return BudgetConfig(global_max=6, per_tool={"read_file": 2, "edit_file": 2})
         elif mode_str == "HYBRID":
-            return BudgetConfig(global_max=12, per_tool={"web_search": 3, "kiwix_query": 3, "fetch_url": 2})
+            return BudgetConfig(
+                global_max=12,
+                per_tool={"web_search": 3, "kiwix_query": 3, "fetch_url": 2},
+            )
         elif mode_str == "RESEARCH":
-            return BudgetConfig(global_max=15, per_tool={"web_search": 5, "kiwix_query": 5, "fetch_url": 3})
+            return BudgetConfig(
+                global_max=15,
+                per_tool={"web_search": 5, "kiwix_query": 5, "fetch_url": 3},
+            )
         else:
             return BudgetConfig()
 

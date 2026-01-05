@@ -1,8 +1,10 @@
 from __future__ import annotations
-from agent.steps.base import BaseStep
-from agent.models import StepResult, StepType, ToolResult
-from agent.context import RunContext
+
 from typing import Optional
+
+from agent.context import RunContext
+from agent.models import StepResult, StepType, ToolResult
+from agent.steps.base import BaseStep
 
 
 class UnderstandStep(BaseStep):
@@ -19,10 +21,7 @@ class UnderstandStep(BaseStep):
             intent_summary += "\nIntent: Factual information seeking"
 
         return StepResult(
-            step_name=self.name,
-            step_type=self.step_type,
-            ok=True,
-            notes=intent_summary
+            step_name=self.name, step_type=self.step_type, ok=True, notes=intent_summary
         )
 
 
@@ -46,14 +45,15 @@ class PlanStep(BaseStep):
 
         plan = f"Plan for {decision.mode.value} mode:\n"
         plan += f"- Tools to use: {', '.join(tools_needed) or 'none'}\n"
-        plan += f"- Estimated sources needed: {decision.stop_conditions.min_sources or 3}\n"
-        plan += f"- Max tool calls: {decision.stop_conditions.max_tool_calls_total or 12}"
+        plan += (
+            f"- Estimated sources needed: {decision.stop_conditions.min_sources or 3}\n"
+        )
+        plan += (
+            f"- Max tool calls: {decision.stop_conditions.max_tool_calls_total or 12}"
+        )
 
         return StepResult(
-            step_name=self.name,
-            step_type=self.step_type,
-            ok=True,
-            notes=plan
+            step_name=self.name, step_type=self.step_type, ok=True, notes=plan
         )
 
 
@@ -68,7 +68,11 @@ class GatherStep(BaseStep):
         decision = self.ctx.decision
 
         total_sources = len(self.ctx.sources)
-        max_iterations = min(5, (decision.stop_conditions.max_tool_calls_total or 12) - self.ctx.global_budget_used)
+        max_iterations = min(
+            5,
+            (decision.stop_conditions.max_tool_calls_total or 12)
+            - self.ctx.global_budget_used,
+        )
 
         for i in range(max_iterations):
             stop, reason = self._check_stop_condition()
@@ -92,7 +96,7 @@ class GatherStep(BaseStep):
             step_type=self.step_type,
             ok=True,
             notes=f"Gathered {final_sources} sources in {max_iterations} iteration(s)",
-            sources_added=[s.source_id for s in self.ctx.sources[total_sources:]]
+            sources_added=[s.source_id for s in self.ctx.sources[total_sources:]],
         )
 
 
@@ -118,7 +122,7 @@ class VerifyStep(BaseStep):
             step_name=self.name,
             step_type=self.step_type,
             ok=valid,
-            notes=f"Verification {'passed' if valid else 'issues: ' + '; '.join(issues)}"
+            notes=f"Verification {'passed' if valid else 'issues: ' + '; '.join(issues)}",
         )
 
 
@@ -134,7 +138,9 @@ class SynthesizeStep(BaseStep):
         if sources_count == 0:
             answer = f"Answer to: {objective}\n\nI wasn't able to find any sources to answer this question."
         else:
-            answer = f"Answer to: {objective}\n\nBased on {sources_count} source(s):\n\n"
+            answer = (
+                f"Answer to: {objective}\n\nBased on {sources_count} source(s):\n\n"
+            )
             answer += "[This is a placeholder - LLM would generate actual answer with citations here]"
 
         self.ctx.final_answer = answer
@@ -142,7 +148,7 @@ class SynthesizeStep(BaseStep):
             step_name=self.name,
             step_type=self.step_type,
             ok=True,
-            notes=f"Synthesized answer with {sources_count} sources"
+            notes=f"Synthesized answer with {sources_count} sources",
         )
 
 
@@ -164,7 +170,9 @@ class FinalizeStep(BaseStep):
             self.ctx.final_answer = "No answer generated."
 
         tools_block = engine.format_tools_used_block(self.ctx.tool_calls)
-        sources_block = engine.format_sources_block(self.ctx.sources, self.ctx.citation_map)
+        sources_block = engine.format_sources_block(
+            self.ctx.sources, self.ctx.citation_map
+        )
         pipeline_block = engine.format_step_history(self.ctx.step_history)
 
         full_output = self.ctx.final_answer
@@ -182,7 +190,7 @@ class FinalizeStep(BaseStep):
             step_name=self.name,
             step_type=self.step_type,
             ok=True,
-            notes="Finalized output with citations"
+            notes="Finalized output with citations",
         )
 
 
@@ -196,10 +204,7 @@ class OutlineStep(BaseStep):
         outline += "1. Introduction\n2. Main Points\n3. Conclusion"
 
         return StepResult(
-            step_name=self.name,
-            step_type=self.step_type,
-            ok=True,
-            notes=outline
+            step_name=self.name, step_type=self.step_type, ok=True, notes=outline
         )
 
 
@@ -209,12 +214,14 @@ class DraftStep(BaseStep):
     critical = True
 
     def execute(self) -> StepResult:
-        self.ctx.final_answer = f"Draft of: {self.ctx.objective}\n\n[Placeholder for actual draft]"
+        self.ctx.final_answer = (
+            f"Draft of: {self.ctx.objective}\n\n[Placeholder for actual draft]"
+        )
         return StepResult(
             step_name=self.name,
             step_type=self.step_type,
             ok=True,
-            notes="Draft created"
+            notes="Draft created",
         )
 
 
@@ -229,7 +236,7 @@ class AnswerStep(BaseStep):
             step_name=self.name,
             step_type=self.step_type,
             ok=True,
-            notes="Answer generated"
+            notes="Answer generated",
         )
 
 
@@ -244,5 +251,5 @@ class ExecuteStep(BaseStep):
             step_name=self.name,
             step_type=self.step_type,
             ok=True,
-            notes="Execution step - for DEV/OPS mode"
+            notes="Execution step - for DEV/OPS mode",
         )

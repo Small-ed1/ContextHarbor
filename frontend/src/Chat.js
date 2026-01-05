@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import RichTextMessage from './RichTextMessage';
 import Skeleton, { SkeletonText } from './Skeleton';
 
-const Chat = ({ sessionId, onBack, onToggleResearch }) => {
+const Chat = ({ sessionId, onBack, onToggleResearch, selectedModel }) => {
   const [messages, setMessages] = useState([]);
   const [currentMessage, setCurrentMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -64,21 +64,39 @@ const Chat = ({ sessionId, onBack, onToggleResearch }) => {
     setError(null);
 
     try {
-      // TODO: Implement actual chat API call
-      // For now, simulate a response
-      setTimeout(() => {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessage.content,
+          mode: researchMode ? 'research' : 'chat',
+          project: 'default',
+          model: selectedModel || undefined,
+          history: messages.slice(-10).map(m => ({  // Last 10 messages for context
+            type: m.type,
+            content: m.content
+          })),
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
         const aiMessage = {
           id: Date.now() + 1,
           type: 'ai',
-          content: `This is a simulated response to: "${userMessage.content}"\n\n**Features to implement:**\n- Real chat API integration\n- Model selection\n- Context management\n- Rich text formatting\n\n\`Code example:\`\n\`\`\`\nconsole.log('Hello, World!');\n\`\`\``,
+          content: data.response,
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, aiMessage]);
-        setIsLoading(false);
-      }, 2000);
-
+      } else {
+        throw new Error(`API error: ${response.status}`);
+      }
     } catch (err) {
       setError(`Failed to send message: ${err.message}`);
+      setIsLoading(false);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -135,6 +153,7 @@ const Chat = ({ sessionId, onBack, onToggleResearch }) => {
         <div className="chat-info">
           <h3>Chat Session</h3>
           <p>Session ID: {sessionId}</p>
+          {selectedModel && <p>Model: {selectedModel}</p>}
         </div>
         <div className="chat-controls">
           <label className="research-toggle">

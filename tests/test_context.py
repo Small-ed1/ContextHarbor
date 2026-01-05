@@ -1,6 +1,8 @@
 import unittest
-from agent.context import RunContext, Message
-from agent.models import RouteDecision, Source, SourceType, ToolCall, StepResult, StepType, Mode, ToolBudget, StopConditions
+
+from agent.context import Message, RunContext
+from agent.models import (Mode, RouteDecision, Source, SourceType, StepResult,
+                          StepType, StopConditions, ToolBudget, ToolCall)
 
 
 class TestRunContext(unittest.TestCase):
@@ -13,17 +15,14 @@ class TestRunContext(unittest.TestCase):
             confidence=confidence,
             signals=[],
             tool_budget=ToolBudget(),
-            stop_conditions=StopConditions()
+            stop_conditions=StopConditions(),
         )
 
     def test_basic_creation(self):
         """Test basic RunContext creation"""
         decision = self._create_decision(Mode.WRITE, 0.8)
         decision.signals = ["file creation"]
-        ctx = RunContext(
-            objective="Create a file",
-            decision=decision
-        )
+        ctx = RunContext(objective="Create a file", decision=decision)
         self.assertEqual(ctx.objective, "Create a file")
         self.assertEqual(ctx.decision.mode, Mode.WRITE)
         self.assertEqual(ctx.project, "default")
@@ -54,7 +53,7 @@ class TestRunContext(unittest.TestCase):
             title="Test Source 1",
             locator="http://example.com/1",
             snippet="Content 1",
-            confidence=0.8
+            confidence=0.8,
         )
         source2 = Source(
             source_id="src2",
@@ -63,7 +62,7 @@ class TestRunContext(unittest.TestCase):
             title="Test Source 2",
             locator="http://example.com/2",
             snippet="Content 2",
-            confidence=0.9
+            confidence=0.9,
         )
 
         idx1 = ctx.add_source(source1)
@@ -89,7 +88,7 @@ class TestRunContext(unittest.TestCase):
             title="Test",
             locator="http://test.com",
             snippet="Test content",
-            confidence=0.7
+            confidence=0.7,
         )
 
         idx = ctx.add_source(source)
@@ -113,7 +112,7 @@ class TestRunContext(unittest.TestCase):
             mode=Mode.WRITE,
             confidence=0.7,
             tool_budget=tool_budget,
-            stop_conditions=stop_conditions
+            stop_conditions=stop_conditions,
         )
         ctx = RunContext(objective="test", decision=decision)
 
@@ -134,7 +133,7 @@ class TestRunContext(unittest.TestCase):
             mode=Mode.WRITE,
             confidence=0.7,
             tool_budget=tool_budget,
-            stop_conditions=StopConditions()
+            stop_conditions=StopConditions(),
         )
         ctx = RunContext(objective="test", decision=decision)
 
@@ -150,7 +149,7 @@ class TestRunContext(unittest.TestCase):
             mode=Mode.WRITE,
             confidence=0.7,
             tool_budget=ToolBudget(),
-            stop_conditions=stop_conditions
+            stop_conditions=stop_conditions,
         )
         ctx = RunContext(objective="test", decision=decision)
 
@@ -167,26 +166,17 @@ class TestRunContext(unittest.TestCase):
         ctx.current_step = "gather"
 
         call1 = ToolCall(
-            name="test_tool",
-            parameters={},
-            step_name="gather",
-            result=None
+            name="test_tool", parameters={}, step_name="gather", result=None
         )
         call2 = ToolCall(
-            name="test_tool",
-            parameters={},
-            step_name="gather",
-            result=None
+            name="test_tool", parameters={}, step_name="gather", result=None
         )
 
         ctx.tool_calls.extend([call1, call2])
 
         self.assertTrue(ctx.can_use_tool("new_tool", step_budget=3))
         call3 = ToolCall(
-            name="new_tool",
-            parameters={},
-            step_name="gather",
-            result=None
+            name="new_tool", parameters={}, step_name="gather", result=None
         )
         ctx.tool_calls.append(call3)
         self.assertFalse(ctx.can_use_tool("another_tool", step_budget=3))
@@ -202,7 +192,7 @@ class TestRunContext(unittest.TestCase):
             ok=True,
             notes="Test notes",
             tool_calls=[],
-            sources_added=[]
+            sources_added=[],
         )
 
         ctx.add_step_result(step_result)

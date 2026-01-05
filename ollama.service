@@ -1,0 +1,31 @@
+[Unit]
+Description=Ollama AI Model Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ollama
+Group=ollama
+Environment=HOME=/var/lib/ollama
+WorkingDirectory=/var/lib/ollama
+ExecStart=/usr/local/bin/ollama serve
+Restart=always
+RestartSec=3
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ollama
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Resource limits (adjust based on your hardware)
+MemoryLimit=8G
+CPUQuota=400%
+
+[Install]
+WantedBy=multi-user.target

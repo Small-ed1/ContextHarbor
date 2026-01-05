@@ -1,27 +1,44 @@
 from __future__ import annotations
+
 import json
 import re
-from typing import Any, Generator
 from functools import lru_cache
+from typing import Any, Generator
 
 import httpx
 
-from .models import Mode
 from .config import OLLAMA_HOST, OLLAMA_MODEL
+from .models import Mode
 
-TOOL_CALL_PATTERN = re.compile(r'TOOL_CALL:\s*(\{.*?\})', re.DOTALL)
-TOOL_CALL_ALT_PATTERN = re.compile(r'TOOL_CALL:\s*(\w+):\s*(\{.*?\})', re.DOTALL)
-TOOL_CALL_MULTIPLE_PATTERN = re.compile(r'TOOL_CALL:\s*(\{.*?\})', re.DOTALL)
+TOOL_CALL_PATTERN = re.compile(r"TOOL_CALL:\s*(\{.*?\})", re.DOTALL)
+TOOL_CALL_ALT_PATTERN = re.compile(r"TOOL_CALL:\s*(\w+):\s*(\{.*?\})", re.DOTALL)
+TOOL_CALL_MULTIPLE_PATTERN = re.compile(r"TOOL_CALL:\s*(\{.*?\})", re.DOTALL)
 
-_TOOL_INFO_KEYWORDS = frozenset(('find', 'search', 'lookup', 'check', 'read', 'list',
-                                   'what', 'how', 'when', 'where', 'who', 'analyze'))
+_TOOL_INFO_KEYWORDS = frozenset(
+    (
+        "find",
+        "search",
+        "lookup",
+        "check",
+        "read",
+        "list",
+        "what",
+        "how",
+        "when",
+        "where",
+        "who",
+        "analyze",
+    )
+)
 
 _CLIENTS: dict[str, httpx.Client] = {}
+
 
 def _get_client(host: str) -> httpx.Client:
     if host not in _CLIENTS:
         _CLIENTS[host] = httpx.Client(timeout=120.0)
     return _CLIENTS[host]
+
 
 def _cleanup_client(host: str) -> None:
     """Close and remove HTTP client for a specific host."""
@@ -33,10 +50,12 @@ def _cleanup_client(host: str) -> None:
         finally:
             del _CLIENTS[host]
 
+
 def _cleanup_all_clients() -> None:
     """Close all HTTP clients and clear the cache."""
     for host in list(_CLIENTS.keys()):
         _cleanup_client(host)
+
 
 def _get_client_with_limit(host: str, max_clients: int = 10) -> httpx.Client:
     """Get client with automatic cleanup when too many clients are cached."""
@@ -44,8 +63,9 @@ def _get_client_with_limit(host: str, max_clients: int = 10) -> httpx.Client:
         # Remove the oldest client (simple LRU)
         oldest_host = next(iter(_CLIENTS))
         _cleanup_client(oldest_host)
-    
+
     return _get_client(host)
+
 
 class OllamaWorker:
     _tool_cache: dict[str, Any] = {}
@@ -57,7 +77,7 @@ class OllamaWorker:
         tools: list[Any] | None = None,
         streaming: bool = True,
         temperature: float = 0.7,
-        num_ctx: int = 8000
+        num_ctx: int = 8000,
     ):
         self.model = model or OLLAMA_MODEL
         self.host = (host or OLLAMA_HOST).rstrip("/")
@@ -70,49 +90,69 @@ class OllamaWorker:
         for tool in self.tools:
             self._tool_lookup[tool.name] = tool
 
-    def _chat(self, model: str, messages: list[dict[str, str]], stream: bool = False) -> str:
+    def _chat(
+        self, model: str, messages: list[dict[str, str]], stream: bool = False
+    ) -> str:
         prompt = messages[-1]["content"]
         payload = {
             "model": model,
             "prompt": prompt,
             "stream": stream,
-            "options": {"temperature": self.temperature, "num_ctx": self.num_ctx}
+            "options": {"temperature": self.temperature, "num_ctx": self.num_ctx},
         }
         client = _get_client_with_limit(self.host)
-        if stream:
-            response = client.post(f"{self.host}/api/generate", json=payload)
-            response.raise_for_status()
-            full_response = ""
-            for line_num, line in enumerate(response.iter_lines(), 1):
-                if line:
-                    try:
-                        data = json.loads(line)
-                        if "response" in data:
-                            full_response += data["response"]
-                        elif "error" in data:
-                            # Handle error responses from Ollama
-                            raise RuntimeError(f"Ollama API error: {data['error']}")
-                    except json.JSONDecodeError as e:
-                        # Log the problematic line for debugging
-                        print(f"Warning: JSON decode error on line {line_num}: {line[:100]}...")
-                        continue
-                    except Exception as e:
-                        # Re-raise non-JSON errors
-                        raise
-            return full_response.strip()
-        else:
-            r = client.post(f"{self.host}/api/generate", json=payload)
-            r.raise_for_status()
-            data = r.json()
-            return data.get("response", "").strip()
 
-    def _chat_stream(self, model: str, messages: list[dict[str, str]]) -> Generator[str, None, None]:
+        # Retry logic for network errors
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if stream:
+                    response = client.post(f"{self.host}/api/generate", json=payload)
+                    response.raise_for_status()
+                    full_response = ""
+                    for line_num, line in enumerate(response.iter_lines(), 1):
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                if "response" in data:
+                                    full_response += data["response"]
+                                elif "error" in data:
+                                    # Handle error responses from Ollama
+                                    raise RuntimeError(f"Ollama API error: {data['error']}")
+                            except json.JSONDecodeError as e:
+                                # Log the problematic line for debugging
+                                print(
+                                    f"Warning: JSON decode error on line {line_num}: {line[:100]}..."
+                                )
+                                continue
+                            except Exception as e:
+                                # Re-raise non-JSON errors
+                                raise
+                    return full_response.strip()
+                else:
+                    r = client.post(f"{self.host}/api/generate", json=payload)
+                    r.raise_for_status()
+                    data = r.json()
+                    return data.get("response", "").strip()
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    # Last attempt failed
+                    raise RuntimeError(f"Ollama request failed after {max_retries} attempts: {str(e)}")
+                # Wait before retry (exponential backoff)
+                import time
+                time.sleep(1 * (2 ** attempt))
+        # This should never be reached
+        raise RuntimeError("All retry attempts failed")
+
+    def _chat_stream(
+        self, model: str, messages: list[dict[str, str]]
+    ) -> Generator[str, None, None]:
         prompt = messages[-1]["content"]
         payload = {
             "model": model,
             "prompt": prompt,
             "stream": True,
-            "options": {"temperature": self.temperature, "num_ctx": self.num_ctx}
+            "options": {"temperature": self.temperature, "num_ctx": self.num_ctx},
         }
         client = _get_client_with_limit(self.host)
         response = client.post(f"{self.host}/api/generate", json=payload)
@@ -129,7 +169,9 @@ class OllamaWorker:
                         break
                 except json.JSONDecodeError as e:
                     # Log the problematic line for debugging but continue streaming
-                    print(f"Warning: JSON decode error on line {line_num}: {line[:100]}...")
+                    print(
+                        f"Warning: JSON decode error on line {line_num}: {line[:100]}..."
+                    )
                     continue
                 except Exception as e:
                     # Re-raise non-JSON errors
@@ -144,7 +186,7 @@ class OllamaWorker:
     def _extract_tool_calls(self, response: str) -> list[dict]:
         """Extract all tool calls from response"""
         calls = []
-        
+
         # Try primary format first: TOOL_CALL: {"name": "...", "parameters": {...}}
         matches = TOOL_CALL_MULTIPLE_PATTERN.finditer(response)
         for match in matches:
@@ -152,7 +194,7 @@ class OllamaWorker:
                 json_str = match.group(1).strip()
                 # Fix common JSON issues
                 json_str = self._clean_json_string(json_str)
-                
+
                 data = json.loads(json_str)
                 if "name" in data and "parameters" in data:
                     calls.append(data)
@@ -169,7 +211,7 @@ class OllamaWorker:
             except json.JSONDecodeError as e:
                 # Try alternative format parsing
                 continue
-        
+
         # Try alternative format: TOOL_CALL: tool_name: {parameters}
         alt_matches = TOOL_CALL_ALT_PATTERN.finditer(response)
         for match in alt_matches:
@@ -181,26 +223,26 @@ class OllamaWorker:
                 calls.append({"name": tool_name, "parameters": params})
             except json.JSONDecodeError:
                 continue
-        
+
         return calls
 
     def _clean_json_string(self, json_str: str) -> str:
         """Clean common JSON formatting issues"""
         # Remove trailing commas
-        json_str = re.sub(r',\s*}', '}', json_str)
-        json_str = re.sub(r',\s*]', ']', json_str)
-        
+        json_str = re.sub(r",\s*}", "}", json_str)
+        json_str = re.sub(r",\s*]", "]", json_str)
+
         # Fix quotes
         json_str = re.sub(r"'([^']*)'", r'"\1"', json_str)
-        
+
         # Remove any non-JSON wrapper characters
         json_str = json_str.strip()
-        if json_str.startswith('```'):
+        if json_str.startswith("```"):
             json_str = json_str[3:]
-        if json_str.endswith('```'):
+        if json_str.endswith("```"):
             json_str = json_str[:-3]
-        json_str = json_str.strip('`').strip()
-        
+        json_str = json_str.strip("`").strip()
+
         return json_str
 
     def _execute_tool_call(self, tool_call: dict, ctx) -> str | None:
@@ -228,21 +270,21 @@ class OllamaWorker:
 
         try:
             result = tool.execute(**parameters)
-            
+
             if result.ok:
                 # Format successful result
                 result_text = f"Tool '{tool_name}' executed successfully"
                 if result.data is not None:
                     result_text += f": {result.data}"
-                
+
                 # Include sources if any
                 if result.sources:
                     result_text += f"\nSources found: {len(result.sources)}"
-                
+
                 return result_text
             else:
                 return f"Tool '{tool_name}' failed: {result.error}"
-                
+
         except Exception as e:
             return f"Tool '{tool_name}' crashed: {str(e)}"
 
@@ -253,21 +295,25 @@ class OllamaWorker:
             params_schema = schema.get("parameters", {})
             required = params_schema.get("required", [])
             properties = params_schema.get("properties", {})
-            
+
             # Check required parameters
             for param in required:
                 if param not in parameters:
-                    return f"Missing required parameter '{param}' for tool '{tool.name}'"
-            
+                    return (
+                        f"Missing required parameter '{param}' for tool '{tool.name}'"
+                    )
+
             # Check parameter types (basic validation)
             for param_name, param_value in parameters.items():
                 if param_name in properties:
                     expected_type = properties[param_name].get("type")
-                    if expected_type and not self._check_type(param_value, expected_type):
+                    if expected_type and not self._check_type(
+                        param_value, expected_type
+                    ):
                         return f"Parameter '{param_name}' should be {expected_type}, got {type(param_value).__name__}"
-            
+
             return None
-            
+
         except Exception:
             # If validation fails, don't block execution
             return None
@@ -280,13 +326,13 @@ class OllamaWorker:
             "number": (int, float),
             "boolean": bool,
             "array": list,
-            "object": dict
+            "object": dict,
         }
-        
+
         expected_python_type = type_mapping.get(expected_type)
-        if expected_python_type:
+        if expected_python_type is not None:
             return isinstance(value, expected_python_type)
-        
+
         return True
 
     def _should_include_tools(self, objective: str, mode: Mode) -> bool:
@@ -309,7 +355,9 @@ class OllamaWorker:
                 default = param_info.get("default")
                 required_mark = " (required)" if param_name in required else ""
                 default_str = f" (default: {default})" if default is not None else ""
-                lines.append(f"    - {param_name}: {param_type}{required_mark}{default_str}")
+                lines.append(
+                    f"    - {param_name}: {param_type}{required_mark}{default_str}"
+                )
                 if desc:
                     lines.append(f"      {desc}")
         return "\n".join(lines)
@@ -318,9 +366,9 @@ class OllamaWorker:
     def _build_system_prompt(self, objective: str, mode: Mode, has_tools: bool) -> str:
         tool_descriptions = ""
         if has_tools and self._should_include_tools(objective, mode):
-            tool_descriptions = "\n\nAvailable tools:\n" + "\n".join([
-                self._format_tool_for_prompt(tool) for tool in self.tools
-            ])
+            tool_descriptions = "\n\nAvailable tools:\n" + "\n".join(
+                [self._format_tool_for_prompt(tool) for tool in self.tools]
+            )
             tool_descriptions += (
                 "\n\nTo use a tool, respond with: "
                 'TOOL_CALL: {"name": "tool_name", "parameters": {"param_name": "param_value"}}'
@@ -337,28 +385,38 @@ class OllamaWorker:
 
     def run(self, ctx) -> str:
         mode = ctx.decision.mode
-        base: list[dict[str, str]] = [{"role": x.role, "content": x.content} for x in ctx.messages]
+        base: list[dict[str, str]] = [
+            {"role": x.role, "content": x.content} for x in ctx.messages
+        ]
 
         sys_prompt = self._build_system_prompt(ctx.objective, mode, bool(self.tools))
-        messages = base + [{"role": "system", "content": sys_prompt}, {"role": "user", "content": ctx.objective}]
+        messages = base + [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": ctx.objective},
+        ]
         response = self._chat(self.model, messages, stream=self.streaming)
 
         # Handle multiple tool calls
         tool_calls = self._extract_tool_calls(response)
         if tool_calls:
             messages.append({"role": "assistant", "content": response})
-            
+
             # Execute each tool call
             tool_results = []
             for i, tool_call in enumerate(tool_calls):
                 tool_result = self._execute_tool_call(tool_call, ctx)
                 if tool_result:
                     tool_results.append(f"Tool call {i+1}: {tool_result}")
-            
+
             if tool_results:
                 # Send all results back to LLM
                 combined_results = "\n".join(tool_results)
-                messages.append({"role": "system", "content": f"Tool execution results:\n{combined_results}"})
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": f"Tool execution results:\n{combined_results}",
+                    }
+                )
                 response = self._chat(self.model, messages, stream=self.streaming)
 
         return response
@@ -371,10 +429,19 @@ class OllamaWorker:
             for source in ctx.sources:
                 idx = ctx.citation_map.get(source.source_id, 0)
                 if idx:
-                    sources_info += f"[{idx}] {source.title}: {source.snippet[:200]}...\n"
-            messages.append({"role": "user", "content": f"{ctx.objective}\n\n{sources_info}"})
+                    sources_info += (
+                        f"[{idx}] {source.title}: {source.snippet[:200]}...\n"
+                    )
+            messages.append(
+                {"role": "user", "content": f"{ctx.objective}\n\n{sources_info}"}
+            )
 
-            messages.append({"role": "system", "content": "Generate a comprehensive answer citing sources inline with [n] notation."})
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "Generate a comprehensive answer citing sources inline with [n] notation.",
+                }
+            )
 
         response = self._chat(self.model, messages, stream=self.streaming)
         return response
@@ -385,11 +452,15 @@ class OllamaWorker:
 
     def run_stream(self, ctx) -> Generator[str, None, None]:
         mode = ctx.decision.mode
-        base: list[dict[str, str]] = [{"role": x.role, "content": x.content} for x in ctx.messages]
+        base: list[dict[str, str]] = [
+            {"role": x.role, "content": x.content} for x in ctx.messages
+        ]
 
         sys_prompt = self._build_system_prompt(ctx.objective, mode, bool(self.tools))
-        messages = base + [{"role": "system", "content": sys_prompt}, {"role": "user", "content": ctx.objective}]
+        messages = base + [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": ctx.objective},
+        ]
 
         for chunk in self._chat_stream(self.model, messages):
             yield chunk
-

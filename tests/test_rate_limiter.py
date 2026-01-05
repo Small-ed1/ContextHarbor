@@ -1,6 +1,7 @@
-import unittest
-from agent.rate_limiter import RateLimiter, RateLimiterManager
 import time
+import unittest
+
+from agent.rate_limiter import RateLimiter, RateLimiterManager
 
 
 class TestRateLimiter(unittest.TestCase):

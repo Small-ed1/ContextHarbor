@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 import re
 from dataclasses import dataclass
@@ -7,6 +8,7 @@ from typing import Iterable, Optional
 
 WORD = re.compile(r"[a-z0-9]+")
 
+
 @dataclass
 class Chunk:
     source: str
@@ -14,8 +16,10 @@ class Chunk:
     chunk_id: str
     text: str
 
+
 def _tokens(s: str) -> set[str]:
     return set(WORD.findall((s or "").lower()))
+
 
 def _load_json(p: Path) -> list[dict]:
     if not p.exists():
@@ -25,6 +29,7 @@ def _load_json(p: Path) -> list[dict]:
     except Exception:
         return []
 
+
 def build_index(manifest, max_chars: int = 1200) -> list[Chunk]:
     chunks: list[Chunk] = []
 
@@ -33,12 +38,31 @@ def build_index(manifest, max_chars: int = 1200) -> list[Chunk]:
         if not t:
             return
         for i in range(0, len(t), max_chars):
-            c = t[i:i+max_chars]
-            chunks.append(Chunk(source=kind, ref=fp.name, chunk_id=f"{fp.stem}:{i//max_chars}", text=c))
+            c = t[i : i + max_chars]
+            chunks.append(
+                Chunk(
+                    source=kind,
+                    ref=fp.name,
+                    chunk_id=f"{fp.stem}:{i//max_chars}",
+                    text=c,
+                )
+            )
 
-    bible_dir = manifest.bible_dir if hasattr(manifest, "bible_dir") else Path("projects/default/bible")
-    drafts_dir = manifest.drafts_dir if hasattr(manifest, "drafts_dir") else Path("projects/default/drafts")
-    research_dir = manifest.research_dir if hasattr(manifest, "research_dir") else Path("projects/default/research")
+    bible_dir = (
+        manifest.bible_dir
+        if hasattr(manifest, "bible_dir")
+        else Path("projects/default/bible")
+    )
+    drafts_dir = (
+        manifest.drafts_dir
+        if hasattr(manifest, "drafts_dir")
+        else Path("projects/default/drafts")
+    )
+    research_dir = (
+        manifest.research_dir
+        if hasattr(manifest, "research_dir")
+        else Path("projects/default/research")
+    )
 
     for fp in sorted(bible_dir.glob("*.md")):
         chunk_file("bible", fp)
@@ -55,20 +79,31 @@ def build_index(manifest, max_chars: int = 1200) -> list[Chunk]:
 
     return chunks
 
+
 def save_index(manifest, chunks: list[Chunk]) -> Path:
-    out_dir = manifest.root / "rag" if hasattr(manifest, "root") else Path("projects/default/rag")
+    out_dir = (
+        manifest.root / "rag"
+        if hasattr(manifest, "root")
+        else Path("projects/default/rag")
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     p = out_dir / "index.json"
     p.write_text(json.dumps([c.__dict__ for c in chunks], indent=2, ensure_ascii=False))
     return p
 
+
 def load_index(manifest) -> list[Chunk]:
-    rag_dir = manifest.root / "rag" if hasattr(manifest, "root") else Path("projects/default/rag")
+    rag_dir = (
+        manifest.root / "rag"
+        if hasattr(manifest, "root")
+        else Path("projects/default/rag")
+    )
     p = rag_dir / "index.json"
     if not p.exists():
         return []
     data = json.loads(p.read_text(errors="ignore"))
     return [Chunk(**d) for d in data]
+
 
 def search(manifest, query: str, k: int = 6) -> list[Chunk]:
     chunks = load_index(manifest)

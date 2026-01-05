@@ -2,14 +2,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import ResearchProgress from './ResearchProgress';
 
-// Mock EventSource
-global.EventSource = jest.fn().mockImplementation((url) => ({
-  url,
-  onopen: null,
-  onmessage: null,
-  onerror: null,
-  close: jest.fn(),
-}));
+// EventSource is mocked globally in setupTests.js
 
 describe('ResearchProgress', () => {
   const mockOnComplete = jest.fn();

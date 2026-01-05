@@ -8,5 +8,7 @@
   "autoModelSwitchMode": "auto",
   "citationFormat": "inline",
   "maxToolCalls": 50,
-  "temperature": 0
+  "temperature": 0,
+  "debugMode": true,
+  "defaultTask": "chat"
 }

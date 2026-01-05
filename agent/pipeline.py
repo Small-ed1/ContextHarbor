@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import Optional, TYPE_CHECKING
+
+from typing import TYPE_CHECKING, Optional
+
 from agent.context import RunContext
 from agent.models import StepType
 from agent.steps.base import BaseStep
@@ -27,11 +29,10 @@ def _register_step(step_type: StepType, step_class: type):
 
 
 def _import_steps():
-    from agent.steps import (
-        UnderstandStep, PlanStep, GatherStep, VerifyStep,
-        SynthesizeStep, FinalizeStep, OutlineStep, DraftStep,
-        AnswerStep, ExecuteStep
-    )
+    from agent.steps import (AnswerStep, DraftStep, ExecuteStep, FinalizeStep,
+                             GatherStep, OutlineStep, PlanStep, SynthesizeStep,
+                             UnderstandStep, VerifyStep)
+
     _register_step(StepType.UNDERSTAND, UnderstandStep)
     _register_step(StepType.PLAN, PlanStep)
     _register_step(StepType.GATHER, GatherStep)
@@ -47,10 +48,21 @@ def _import_steps():
 DEFAULT_PIPELINE: dict[str, list[StepType]] = {
     "WRITE": [StepType.UNDERSTAND, StepType.OUTLINE, StepType.DRAFT, StepType.FINALIZE],
     "EDIT": [StepType.UNDERSTAND, StepType.PLAN, StepType.DRAFT, StepType.FINALIZE],
-    "RESEARCH": [StepType.UNDERSTAND, StepType.PLAN, StepType.GATHER,
-                 StepType.VERIFY, StepType.SYNTHESIZE, StepType.FINALIZE],
-    "HYBRID": [StepType.UNDERSTAND, StepType.PLAN, StepType.GATHER,
-               StepType.SYNTHESIZE, StepType.FINALIZE],
+    "RESEARCH": [
+        StepType.UNDERSTAND,
+        StepType.PLAN,
+        StepType.GATHER,
+        StepType.VERIFY,
+        StepType.SYNTHESIZE,
+        StepType.FINALIZE,
+    ],
+    "HYBRID": [
+        StepType.UNDERSTAND,
+        StepType.PLAN,
+        StepType.GATHER,
+        StepType.SYNTHESIZE,
+        StepType.FINALIZE,
+    ],
 }
 
 
@@ -98,6 +110,8 @@ class Pipeline:
         return f"Pipeline halted at step '{result.step_name}': {result.notes}"
 
 
-def execute_pipeline(ctx: RunContext, controller: Optional["Controller"] = None) -> RunContext:
+def execute_pipeline(
+    ctx: RunContext, controller: Optional["Controller"] = None
+) -> RunContext:
     pipeline = Pipeline(ctx, controller)
     return pipeline.execute()

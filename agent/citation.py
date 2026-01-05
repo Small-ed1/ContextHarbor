@@ -1,7 +1,8 @@
 from __future__ import annotations
+
+import re
 from dataclasses import dataclass
 from typing import Optional
-import re
 
 
 @dataclass
@@ -22,20 +23,22 @@ class CitationValidationResult:
 
 
 class CitationEngine:
-    CITATION_PATTERN = re.compile(r'\[(\d+)\]')
-    URL_PATTERN = re.compile(r'https?://\S+')
+    CITATION_PATTERN = re.compile(r"\[(\d+)\]")
+    URL_PATTERN = re.compile(r"https?://\S+")
 
     def extract_inline_citations(self, text: str) -> list[CitationMatch]:
         matches = []
         for match in self.CITATION_PATTERN.finditer(text):
             index = int(match.group(1))
-            matches.append(CitationMatch(
-                index=index,
-                start=match.start(),
-                end=match.end(),
-                context_before=text[max(0, match.start() - 50):match.start()],
-                context_after=text[match.end():min(len(text), match.end() + 50)]
-            ))
+            matches.append(
+                CitationMatch(
+                    index=index,
+                    start=match.start(),
+                    end=match.end(),
+                    context_before=text[max(0, match.start() - 50) : match.start()],
+                    context_after=text[match.end() : min(len(text), match.end() + 50)],
+                )
+            )
         return matches
 
     def validate_citations(
@@ -43,7 +46,7 @@ class CitationEngine:
         text: str,
         sources: list,
         citation_map: dict[str, int],
-        min_required: int = 0
+        min_required: int = 0,
     ) -> CitationValidationResult:
         errors = []
         warnings = []
@@ -61,9 +64,11 @@ class CitationEngine:
                 errors.append(f"Citation [{cm.index}] references non-existent source")
 
         if min_required > 0 and len(cited_indices) < min_required:
-            errors.append(f"Required at least {min_required} citations, found {len(cited_indices)}")
+            errors.append(
+                f"Required at least {min_required} citations, found {len(cited_indices)}"
+            )
 
-        paragraphs = text.split('\n\n')
+        paragraphs = text.split("\n\n")
         cited_paragraphs = sum(1 for p in paragraphs if self.CITATION_PATTERN.search(p))
         if len(paragraphs) > 2 and cited_paragraphs == 0:
             warnings.append("No citations found in answer body")
@@ -72,7 +77,7 @@ class CitationEngine:
             valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
-            citation_count=len(cited_indices)
+            citation_count=len(cited_indices),
         )
 
     def format_sources_block(self, sources: list, citation_map: dict[str, int]) -> str:
@@ -82,8 +87,7 @@ class CitationEngine:
         lines = ["## Sources\n"]
 
         sorted_sources = sorted(
-            sources,
-            key=lambda s: citation_map.get(s.source_id, 999)
+            sources, key=lambda s: citation_map.get(s.source_id, 999)
         )
 
         for source in sorted_sources:
@@ -107,7 +111,11 @@ class CitationEngine:
                 lines.append(f"    Artifact: {source.locator}")
 
             if source.snippet:
-                preview = source.snippet[:200] + "..." if len(source.snippet) > 200 else source.snippet
+                preview = (
+                    source.snippet[:200] + "..."
+                    if len(source.snippet) > 200
+                    else source.snippet
+                )
                 lines.append(f"    Preview: {preview}")
 
             lines.append("")
@@ -150,7 +158,9 @@ class CitationEngine:
             status = "✓" if result.ok else "✗"
             lines.append(f"{status} {result.step_name}: {result.notes}")
             if result.tool_calls:
-                lines.append(f"    Tools: {', '.join(tc.name for tc in result.tool_calls)}")
+                lines.append(
+                    f"    Tools: {', '.join(tc.name for tc in result.tool_calls)}"
+                )
             if result.sources_added:
                 lines.append(f"    Sources: {len(result.sources_added)} added")
         lines.append("")
@@ -174,7 +184,7 @@ class CitationEngine:
         text: str,
         sources: list,
         citation_map: dict[str, int],
-        citation_hints: Optional[dict[str, str]] = None
+        citation_hints: Optional[dict[str, str]] = None,
     ) -> str:
         result = text
         for source in sources:
@@ -193,13 +203,19 @@ class CitationEngine:
     def extract_urls_from_text(self, text: str) -> list[str]:
         return self.URL_PATTERN.findall(text)
 
-    def check_url_coverage(self, text: str, sources: list, citation_map: dict[str, int]) -> tuple[int, int]:
+    def check_url_coverage(
+        self, text: str, sources: list, citation_map: dict[str, int]
+    ) -> tuple[int, int]:
         urls_in_text = self.extract_urls_from_text(text)
         cited_sources = set()
 
         for source in sources:
             idx = citation_map.get(source.source_id)
-            if idx and self.CITATION_PATTERN.search(text) and any(str(idx) in line for line in text.split('\n')):
+            if (
+                idx
+                and self.CITATION_PATTERN.search(text)
+                and any(str(idx) in line for line in text.split("\n"))
+            ):
                 cited_sources.add(source.source_id)
 
         return len(urls_in_text), len(cited_sources)

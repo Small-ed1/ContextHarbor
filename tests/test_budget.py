@@ -1,5 +1,6 @@
 import unittest
-from agent.budget import BudgetManager, BudgetExceeded
+
+from agent.budget import BudgetExceeded, BudgetManager
 
 
 class TestBudgetManager(unittest.TestCase):

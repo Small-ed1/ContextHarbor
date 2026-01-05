@@ -1,16 +1,18 @@
 from __future__ import annotations
-from typing import List, Dict, Any, Optional
-from enum import Enum
-import time
+
 import hashlib
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
 from agent.models import Mode
 
 
 class ResearchMode(Enum):
-    QUICK = "quick"      # Single pass, basic research
+    QUICK = "quick"  # Single pass, basic research
     STANDARD = "standard"  # Two passes, moderate depth
-    DEEP = "deep"        # Multi-pass, comprehensive analysis
+    DEEP = "deep"  # Multi-pass, comprehensive analysis
 
 
 class DeepResearchEngine:
@@ -52,18 +54,37 @@ class DeepResearchEngine:
             "raw_results": results,
             "synthesis": synthesis,
             "execution_time": time.time(),
-            "sources_used": self._count_sources(results)
+            "sources_used": self._count_sources(results),
         }
 
     def _analyze_query_complexity(self, query: str) -> Dict[str, Any]:
         """Analyze query complexity using simple heuristics"""
 
         complexity_indicators = {
-            "technical_terms": ["algorithm", "quantum", "neural", "machine learning", "blockchain", "cryptography"],
-            "research_depth": ["comprehensive", "detailed", "thorough", "extensive", "in-depth"],
-            "multi_disciplinary": ["intersection", "relationship", "comparison", "vs", "versus"],
+            "technical_terms": [
+                "algorithm",
+                "quantum",
+                "neural",
+                "machine learning",
+                "blockchain",
+                "cryptography",
+            ],
+            "research_depth": [
+                "comprehensive",
+                "detailed",
+                "thorough",
+                "extensive",
+                "in-depth",
+            ],
+            "multi_disciplinary": [
+                "intersection",
+                "relationship",
+                "comparison",
+                "vs",
+                "versus",
+            ],
             "current_events": ["recent", "latest", "current", "breaking", "news"],
-            "controversial": ["debate", "controversy", "dispute", "criticism"]
+            "controversial": ["debate", "controversy", "dispute", "criticism"],
         }
 
         scores = {}
@@ -72,16 +93,24 @@ class DeepResearchEngine:
             scores[category] = min(matches * 2, 10)  # Cap at 10
 
         total_score = sum(scores.values())
-        complexity_level = "low" if total_score < 5 else "medium" if total_score < 15 else "high"
+        complexity_level = (
+            "low" if total_score < 5 else "medium" if total_score < 15 else "high"
+        )
 
         return {
             "scores": scores,
             "total_score": total_score,
             "complexity_level": complexity_level,
-            "estimated_passes": 1 if complexity_level == "low" else 2 if complexity_level == "medium" else 4
+            "estimated_passes": 1
+            if complexity_level == "low"
+            else 2
+            if complexity_level == "medium"
+            else 4,
         }
 
-    def _select_research_strategy(self, query: str, mode: ResearchMode, analysis: Dict) -> Dict[str, Any]:
+    def _select_research_strategy(
+        self, query: str, mode: ResearchMode, analysis: Dict
+    ) -> Dict[str, Any]:
         """Select research strategy based on mode and analysis"""
 
         base_strategies = {
@@ -89,20 +118,20 @@ class DeepResearchEngine:
                 "passes": 1,
                 "time_limit": 60,
                 "sources": ["kiwix"],
-                "depth": "surface"
+                "depth": "surface",
             },
             ResearchMode.STANDARD: {
                 "passes": 2,
                 "time_limit": 300,
                 "sources": ["kiwix", "web"],
-                "depth": "moderate"
+                "depth": "moderate",
             },
             ResearchMode.DEEP: {
                 "passes": 4,
                 "time_limit": 1800,
                 "sources": ["kiwix", "web", "academic"],
-                "depth": "comprehensive"
-            }
+                "depth": "comprehensive",
+            },
         }
 
         strategy = base_strategies[mode].copy()
@@ -113,12 +142,17 @@ class DeepResearchEngine:
             strategy["time_limit"] += 300
 
         # Adjust sources based on query type
-        if "technical" in analysis["scores"] and analysis["scores"]["technical_terms"] > 3:
+        if (
+            "technical" in analysis["scores"]
+            and analysis["scores"]["technical_terms"] > 3
+        ):
             strategy["sources"].append("code_repositories")
 
         return strategy
 
-    def _execute_research_passes(self, query: str, strategy: Dict) -> List[Dict[str, Any]]:
+    def _execute_research_passes(
+        self, query: str, strategy: Dict
+    ) -> List[Dict[str, Any]]:
         """Execute multiple research passes"""
 
         results = []
@@ -137,7 +171,9 @@ class DeepResearchEngine:
         """Generate cache key for tool results"""
         return hashlib.md5(f"{tool_name}:{query}".encode()).hexdigest()
 
-    def _execute_single_pass(self, query: str, pass_num: int, strategy: Dict) -> Dict[str, Any]:
+    def _execute_single_pass(
+        self, query: str, pass_num: int, strategy: Dict
+    ) -> Dict[str, Any]:
         """Execute a single research pass with parallel tool execution"""
 
         # Refine query for this pass
@@ -156,17 +192,21 @@ class DeepResearchEngine:
             # Check cache first
             if self.cache_enabled and cache_key in self._cache:
                 cached_result = self._cache[cache_key]
-                pass_results.append({
-                    "tool": tool_name,
-                    "query": refined_query,
-                    "result": cached_result,
-                    "success": cached_result.get("success", False),
-                    "cached": True
-                })
+                pass_results.append(
+                    {
+                        "tool": tool_name,
+                        "query": refined_query,
+                        "result": cached_result,
+                        "success": cached_result.get("success", False),
+                        "cached": True,
+                    }
+                )
                 continue
 
             # Submit to thread pool
-            future = self._executor.submit(self._execute_research_tool_safe, tool_name, refined_query, cache_key)
+            future = self._executor.submit(
+                self._execute_research_tool_safe, tool_name, refined_query, cache_key
+            )
             futures[future] = tool_name
 
         # Collect results
@@ -176,22 +216,26 @@ class DeepResearchEngine:
                 result_data = future.result()
                 pass_results.append(result_data)
             except Exception as e:
-                pass_results.append({
-                    "tool": tool_name,
-                    "query": refined_query,
-                    "error": str(e),
-                    "success": False
-                })
+                pass_results.append(
+                    {
+                        "tool": tool_name,
+                        "query": refined_query,
+                        "error": str(e),
+                        "success": False,
+                    }
+                )
 
         return {
             "pass_number": pass_num,
             "refined_query": refined_query,
             "tools_used": tools_to_use,
             "results": pass_results,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
-    def _refine_query_for_pass(self, original_query: str, pass_num: int, strategy: Dict) -> str:
+    def _refine_query_for_pass(
+        self, original_query: str, pass_num: int, strategy: Dict
+    ) -> str:
         """Refine the query for each research pass"""
 
         if pass_num == 0:
@@ -202,7 +246,7 @@ class DeepResearchEngine:
             f"{original_query} detailed analysis",
             f"{original_query} recent developments",
             f"{original_query} expert opinions",
-            f"{original_query} comprehensive review"
+            f"{original_query} comprehensive review",
         ]
 
         return refinements[min(pass_num - 1, len(refinements) - 1)]
@@ -224,7 +268,9 @@ class DeepResearchEngine:
 
         return base_tools[:3]  # Limit to 3 tools per pass
 
-    def _execute_research_tool_safe(self, tool_name: str, query: str, cache_key: str) -> Dict[str, Any]:
+    def _execute_research_tool_safe(
+        self, tool_name: str, query: str, cache_key: str
+    ) -> Dict[str, Any]:
         """Execute research tool with error handling and caching"""
         try:
             result = self._execute_research_tool(tool_name, query)
@@ -238,7 +284,7 @@ class DeepResearchEngine:
                 "query": query,
                 "result": result,
                 "success": result.get("success", False),
-                "cached": False
+                "cached": False,
             }
         except Exception as e:
             return {
@@ -246,7 +292,7 @@ class DeepResearchEngine:
                 "query": query,
                 "error": str(e),
                 "success": False,
-                "cached": False
+                "cached": False,
             }
 
     def _execute_research_tool(self, tool_name: str, query: str) -> Dict[str, Any]:
@@ -279,14 +325,14 @@ class DeepResearchEngine:
                     "success": True,
                     "data": str(data)[:1000],  # Limit data size
                     "sources": sources[:5],  # Limit sources
-                    "confidence": 0.9
+                    "confidence": 0.9,
                 }
             else:
                 return {
                     "success": False,
                     "data": f"Tool failed: {result.error}",
                     "sources": [],
-                    "confidence": 0.0
+                    "confidence": 0.0,
                 }
 
         except Exception as e:
@@ -294,7 +340,7 @@ class DeepResearchEngine:
                 "success": False,
                 "data": f"Tool execution error: {str(e)}",
                 "sources": [],
-                "confidence": 0.0
+                "confidence": 0.0,
             }
 
     def _is_information_sufficient(self, results: List[Dict], strategy: Dict) -> bool:
@@ -314,7 +360,10 @@ class DeepResearchEngine:
 
                     # Count high-quality sources (web URLs, academic sources)
                     for source in sources:
-                        if any(indicator in source.lower() for indicator in ['http', 'academic', 'edu', 'gov']):
+                        if any(
+                            indicator in source.lower()
+                            for indicator in ["http", "academic", "edu", "gov"]
+                        ):
                             high_quality_sources += 1
 
         # Early termination conditions
@@ -324,11 +373,15 @@ class DeepResearchEngine:
         # Stop if we have good coverage or are running too long
         sufficient_sources = total_sources >= 8 or high_quality_sources >= 3
         sufficient_results = total_successful_results >= 6
-        time_pressure = current_pass >= min_passes and (sufficient_sources or sufficient_results)
+        time_pressure = current_pass >= min_passes and (
+            sufficient_sources or sufficient_results
+        )
 
         return time_pressure or current_pass >= strategy.get("passes", 2)
 
-    def _synthesize_findings(self, results: List[Dict], original_query: str) -> Dict[str, Any]:
+    def _synthesize_findings(
+        self, results: List[Dict], original_query: str
+    ) -> Dict[str, Any]:
         """Synthesize findings from all research passes"""
 
         all_sources = []
@@ -349,7 +402,7 @@ class DeepResearchEngine:
             "unique_sources": len(unique_sources),
             "sources_list": unique_sources[:10],  # Limit for brevity
             "confidence_score": min(len(successful_results) * 0.2, 1.0),
-            "summary": f"Found {len(unique_sources)} unique sources across {len(successful_results)} successful research operations"
+            "summary": f"Found {len(unique_sources)} unique sources across {len(successful_results)} successful research operations",
         }
 
     def _count_sources(self, results: List[Dict]) -> int:
@@ -363,5 +416,5 @@ class DeepResearchEngine:
 
     def cleanup(self):
         """Clean up resources"""
-        if hasattr(self, '_executor'):
+        if hasattr(self, "_executor"):
             self._executor.shutdown(wait=True)

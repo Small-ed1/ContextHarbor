@@ -2,15 +2,25 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
+beforeEach(() => {
+  // Mock the settings and chats fetches
+  fetch
+    .mockResponseOnce(JSON.stringify({
+      theme: 'dark',
+      homeModelPreference: 'default'
+    }))
+    .mockResponseOnce(JSON.stringify([])); // for /api/chats
+});
+
 test('renders Router Phase 1 title', () => {
   render(<App />);
-  const titleElement = screen.getByText(/Router Phase 1 - AI Research Dashboard/i);
+  const titleElement = screen.getByText(/Welcome to Router Phase 1/i);
   expect(titleElement).toBeInTheDocument();
 });
 
 test('renders research description', () => {
   render(<App />);
-  const messageElement = screen.getByText(/Advanced research and analysis powered by local LLMs/i);
+  const messageElement = screen.getByText(/Advanced AI assistant with research capabilities/i);
   expect(messageElement).toBeInTheDocument();
 });
 

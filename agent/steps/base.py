@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
 from agent.context import RunContext
 from agent.models import StepResult, StepType, ToolResult
 
@@ -29,7 +31,7 @@ class BaseStep(ABC):
                 step_name=self.name,
                 step_type=self.step_type,
                 ok=False,
-                notes=f"Budget exceeded for {tool_name}"
+                notes=f"Budget exceeded for {tool_name}",
             )
 
         if not self.controller:
@@ -37,7 +39,7 @@ class BaseStep(ABC):
                 step_name=self.name,
                 step_type=self.step_type,
                 ok=False,
-                notes="No controller available"
+                notes="No controller available",
             )
 
         try:
@@ -45,11 +47,9 @@ class BaseStep(ABC):
             result = self.controller.execute_tool(tool_name, **kwargs)  # type: ignore
 
             from agent.models import ToolCall
+
             tc = ToolCall(
-                name=tool_name,
-                parameters=kwargs,
-                result=result,
-                step_name=self.name
+                name=tool_name, parameters=kwargs, result=result, step_name=self.name
             )
             self.ctx.tool_calls.append(tc)
 
@@ -66,7 +66,7 @@ class BaseStep(ABC):
                 ok=result.ok,
                 notes=f"Tool {tool_name} executed",
                 tool_calls=[tc],
-                sources_added=sources_added
+                sources_added=sources_added,
             )
 
         except Exception as e:
@@ -74,7 +74,7 @@ class BaseStep(ABC):
                 step_name=self.name,
                 step_type=self.step_type,
                 ok=False,
-                notes=f"Tool {tool_name} failed: {str(e)}"
+                notes=f"Tool {tool_name} failed: {str(e)}",
             )
 
     def _check_stop_condition(self) -> tuple[bool, str]:

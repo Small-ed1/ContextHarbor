@@ -26,6 +26,7 @@ class ChatRequest(BaseModel):
     text: str | None = None  # Alias for message
     task: str = "chat"  # Alternative to mode
     researchDepth: str = "standard"  # For research mode
+    history: List[Dict[str, str]] = []  # Conversation history
 
 
 OLLAMA_HOST = "http://127.0.0.1:11434"

@@ -1,7 +1,8 @@
 import unittest
+
+from agent.models import ToolResult
 from agent.registry import ToolRegistry
 from agent.tools import BaseTool
-from agent.models import ToolResult
 
 
 class MockTool(BaseTool):

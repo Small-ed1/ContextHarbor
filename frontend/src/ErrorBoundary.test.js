@@ -35,8 +35,8 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-    expect(screen.getByText(/We're sorry/)).toBeInTheDocument();
+    expect(screen.getByText('⚠️ Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText(/We're experiencing technical difficulties/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /refresh page/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
@@ -69,7 +69,7 @@ describe('ErrorBoundary', () => {
     );
 
     // Should show error UI
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText('⚠️ Something went wrong')).toBeInTheDocument();
 
     // Click try again
     const tryAgainButton = screen.getByRole('button', { name: /try again/i });

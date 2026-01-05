@@ -1,0 +1,32 @@
+[Unit]
+Description=Router Phase 1 LLM Dashboard Backend
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=small_ed
+Group=small_ed
+WorkingDirectory=/home/small_ed/router_phase1
+Environment=PATH=/home/small_ed/router_phase1/venv/bin
+ExecStart=/home/small_ed/router_phase1/venv/bin/python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=router-phase1-backend
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/home/small_ed/router_phase1
+ProtectHome=yes
+
+# Resource limits
+MemoryLimit=2G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

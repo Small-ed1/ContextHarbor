@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
+
 
 @dataclass
 class ProjectManifest:
@@ -18,6 +20,7 @@ class ProjectManifest:
     @property
     def research_dir(self) -> Path:
         return self.root / "research"
+
 
 def load_manifest(project: str = "default") -> ProjectManifest:
     root = Path("projects") / project

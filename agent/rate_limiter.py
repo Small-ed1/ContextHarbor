@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 import time
-from typing import Dict
 from threading import Lock
+from typing import Dict
 
 
 class RateLimiter:
@@ -24,7 +25,9 @@ class RateLimiter:
         """Check if a call is allowed under the rate limit"""
         with self._lock:
             now = time.time()
-            self.calls = [call_time for call_time in self.calls if now - call_time < self.period]
+            self.calls = [
+                call_time for call_time in self.calls if now - call_time < self.period
+            ]
             return len(self.calls) < self.max_calls
 
     def acquire(self) -> None:

@@ -1,10 +1,11 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
-from pathlib import Path
-from datetime import datetime, timezone
 
-from .models import RouteDecision, Source, ToolCall, StepResult, StepType
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from .models import RouteDecision, Source, StepResult, StepType, ToolCall
 
 
 @dataclass
@@ -21,7 +22,9 @@ class RunContext:
 
     project: str = "default"
     manifest: Any = None
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     run_dir: Optional[Path] = None
 
     messages: List[Message] = field(default_factory=list)
@@ -74,18 +77,19 @@ class RunContext:
         return None
 
     def can_use_tool(self, tool_name: str, step_budget: Optional[int] = None) -> bool:
-        if self.global_budget_used >= (self.decision.stop_conditions.max_tool_calls_total or 12):
+        if self.global_budget_used >= (
+            self.decision.stop_conditions.max_tool_calls_total or 12
+        ):
             return False
 
-        tool_limit = self.decision.tool_budget.limits.get(tool_name, float('inf'))
+        tool_limit = self.decision.tool_budget.limits.get(tool_name, float("inf"))
         used = self.per_tool_used.get(tool_name, 0)
         if used >= tool_limit:
             return False
 
         if step_budget is not None:
             step_used = sum(
-                1 for tc in self.tool_calls
-                if tc.step_name == self.current_step
+                1 for tc in self.tool_calls if tc.step_name == self.current_step
             )
             if step_used >= step_budget:
                 return False
@@ -98,12 +102,14 @@ class RunContext:
 
     def add_step_result(self, result: StepResult):
         self.step_results.append(result)
-        self.step_history.append({
-            "step_name": result.step_name,
-            "step_type": result.step_type.value,
-            "ok": result.ok,
-            "notes": result.notes,
-            "tool_calls_count": len(result.tool_calls),
-            "sources_added": len(result.sources_added),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
+        self.step_history.append(
+            {
+                "step_name": result.step_name,
+                "step_type": result.step_type.value,
+                "ok": result.ok,
+                "notes": result.notes,
+                "tool_calls_count": len(result.tool_calls),
+                "sources_added": len(result.sources_added),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )

@@ -1,7 +1,8 @@
 import unittest
-from agent.worker_ollama import OllamaWorker
-from agent.tools import BaseTool
+
 from agent.models import ToolResult
+from agent.tools import BaseTool
+from agent.worker_ollama import OllamaWorker
 
 
 class MockTool(BaseTool):
@@ -29,7 +30,7 @@ class TestOllamaWorker(unittest.TestCase):
             model="custom_model",
             host="http://custom-host:11434",
             streaming=False,
-            temperature=0.5
+            temperature=0.5,
         )
         self.assertEqual(worker.model, "custom_model")
         self.assertEqual(worker.host, "http://custom-host:11434")
@@ -73,9 +74,9 @@ class TestOllamaWorker(unittest.TestCase):
     def test_extract_multiple_tool_calls(self):
         """Test extracting multiple tool calls in alt format"""
         worker = OllamaWorker()
-        response = '''TOOL_CALL: read_file: {"path": "a.py"}
+        response = """TOOL_CALL: read_file: {"path": "a.py"}
 TOOL_CALL: write_file: {"path": "b.py", "content": "test"}
-'''
+"""
         calls = worker._extract_tool_calls(response)
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0]["name"], "read_file")
@@ -91,7 +92,7 @@ TOOL_CALL: write_file: {"path": "b.py", "content": "test"}
     def test_extract_tool_call_with_invalid_json(self):
         """Test handling invalid JSON gracefully"""
         worker = OllamaWorker()
-        response = 'TOOL_CALL: {invalid json}'
+        response = "TOOL_CALL: {invalid json}"
         calls = worker._extract_tool_calls(response)
         self.assertEqual(len(calls), 0)
 
