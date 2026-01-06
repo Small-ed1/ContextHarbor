@@ -110,7 +110,7 @@ class ActiveResearchSession:
 
     def subscribe(self) -> asyncio.Queue:
         """Subscribe to progress updates."""
-        queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue()
         self.subscribers.add(queue)
         return queue
 

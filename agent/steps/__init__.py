@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from agent.context import RunContext
+
+if TYPE_CHECKING:
+    from agent.controller import Controller
 from agent.models import StepResult, StepType, ToolResult
 from agent.steps.base import BaseStep
 
@@ -157,7 +160,7 @@ class FinalizeStep(BaseStep):
     step_type = StepType.FINALIZE
     critical = True
 
-    def __init__(self, ctx: RunContext, controller: Optional[object] = None):
+    def __init__(self, ctx: RunContext, controller: Optional["Controller"] = None):
         super().__init__(ctx, controller)
         self.step_budget = 5
 

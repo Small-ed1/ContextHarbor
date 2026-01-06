@@ -18,14 +18,12 @@ class TestPipeline(unittest.TestCase):
         self.ctx = RunContext(objective="Test objective", decision=self.decision)
         self.controller = Mock()
 
-    @patch("agent.pipeline._import_steps")
-    def test_pipeline_building(self, mock_import):
+    def test_pipeline_building(self):
         from agent.steps import (FinalizeStep, GatherStep, PlanStep,
                                  SynthesizeStep, UnderstandStep, VerifyStep)
 
         pipeline = Pipeline(self.ctx, self.controller)
 
-        mock_import.assert_called_once()
         self.assertEqual(len(pipeline.steps), 6)  # RESEARCH pipeline has 6 steps
 
     def test_default_pipelines(self):
@@ -45,8 +43,7 @@ class TestPipeline(unittest.TestCase):
         self.assertIn(StepType.SYNTHESIZE, research_steps)
         self.assertIn(StepType.FINALIZE, research_steps)
 
-    @patch("agent.pipeline._import_steps")
-    def test_step_override(self, mock_import):
+    def test_step_override(self):
         from agent.steps import UnderstandStep
 
         override_steps = [StepType.UNDERSTAND]

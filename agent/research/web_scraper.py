@@ -14,12 +14,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from urllib.parse import quote_plus, urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import aiohttp
-import requests
+import requests  # type: ignore
 from bs4 import BeautifulSoup
 
 try:
@@ -156,7 +156,7 @@ class WebScraper(MemoryAwareMixin):
         self.cache_expiry = timedelta(hours=24)
 
         # Selenium for JavaScript-heavy sites
-        self.selenium_driver: Optional[webdriver.Chrome] = None
+        self.selenium_driver: Optional[Any] = None
 
     async def __aenter__(self):
         timeout = aiohttp.ClientTimeout(total=self.config.timeout)
@@ -270,7 +270,7 @@ class WebScraper(MemoryAwareMixin):
         if api_key and cx and self.session:
             try:
                 api_url = "https://www.googleapis.com/customsearch/v1"
-                params = {
+                params: Dict[str, Union[str, int]] = {
                     "key": api_key,
                     "cx": cx,
                     "q": query.query,
@@ -318,7 +318,7 @@ class WebScraper(MemoryAwareMixin):
 
                         # Extract result URLs
                         for link in soup.find_all("a", href=True):
-                            href = link["href"]
+                            href = str(link["href"])
                             if href.startswith("/url?q="):
                                 url = href.split("/url?q=")[1].split("&")[0]
                                 if url.startswith("http") and not any(
@@ -343,7 +343,7 @@ class WebScraper(MemoryAwareMixin):
             try:
                 api_url = "https://api.bing.microsoft.com/v7.0/search"
                 headers = {"Ocp-Apim-Subscription-Key": api_key}
-                params = {
+                params: Dict[str, Union[str, int]] = {
                     "q": query.query,
                     "count": min(query.num_results, 50),
                     "mkt": f"{query.language}-{query.region}",
@@ -368,6 +368,7 @@ class WebScraper(MemoryAwareMixin):
 
     async def _scrape_bing_results(self, query: SearchQuery) -> List[str]:
         """Scrape Bing search results."""
+        assert self.session is not None
         urls = []
 
         try:
@@ -382,8 +383,8 @@ class WebScraper(MemoryAwareMixin):
 
                     for link in soup.find_all("a", {"class": "tilk"}):
                         href = link.get("href")
-                        if href and href.startswith("http"):
-                            urls.append(href)
+                        if href and str(href).startswith("http"):
+                            urls.append(str(href))
 
         except Exception as e:
             self.logger.error(f"Bing scraping failed: {e}")
@@ -407,12 +408,12 @@ class WebScraper(MemoryAwareMixin):
 
                         for link in soup.find_all("a", {"class": "result__url"}):
                             href = link.get("href")
-                            if href and href.startswith("http"):
-                                urls.append(href)
+                            if href and str(href).startswith("http"):
+                                urls.append(str(href))
 
                         # Also check for regular links
                         for link in soup.find_all("a", href=True):
-                            href = link["href"]
+                            href = str(link["href"])
                             if href.startswith("//"):
                                 href = "https:" + href
                             if href.startswith("http") and "duckduckgo" not in href:
@@ -466,19 +467,21 @@ class WebScraper(MemoryAwareMixin):
         self, urls: List[str], topic: str, max_results: int
     ) -> List[ScrapedContent]:
         """Scrape content from URLs in batches with rate limiting."""
-        scraped_content = []
+        assert self.current_session is not None
+        session = self.current_session
+        scraped_content: List[ScrapedContent] = []
         semaphore = asyncio.Semaphore(self.config.max_concurrent_requests)
 
         async def scrape_with_semaphore(url: str) -> Optional[ScrapedContent]:
             async with semaphore:
                 content = await self._scrape_single_url(url, topic)
                 if content:
-                    self.current_session.total_requests += 1
-                    self.current_session.successful_requests += 1
+                    session.total_requests += 1
+                    session.successful_requests += 1
                     return content
                 else:
-                    self.current_session.total_requests += 1
-                    self.current_session.failed_requests += 1
+                    session.total_requests += 1
+                    session.failed_requests += 1
                     return None
 
         # Create tasks for batch processing
@@ -657,7 +660,7 @@ class WebScraper(MemoryAwareMixin):
 
     async def _scrape_with_selenium(self, url: str) -> Optional[ScrapedContent]:
         """Scrape using Selenium for JavaScript-heavy sites."""
-        if not self.selenium_driver and webdriver and ChromeDriverManager:
+        if not self.selenium_driver and webdriver and ChromeDriverManager and Options:
             try:
                 options = Options()
                 options.add_argument("--headless")
@@ -792,20 +795,20 @@ class WebScraper(MemoryAwareMixin):
         self, soup: BeautifulSoup, headers: Dict[str, str]
     ) -> Dict[str, Any]:
         """Extract metadata from page."""
-        metadata = {}
+        metadata: Dict[str, Any] = {}
 
         # Meta tags
         meta_tags = soup.find_all("meta")
         for tag in meta_tags:
-            name = tag.get("name") or tag.get("property")
+            name = str(tag.get("name") or tag.get("property") or "")
             content = tag.get("content")
             if name and content:
                 metadata[name] = content
 
         # Open Graph tags
-        og_tags = soup.find_all("meta", property=lambda x: x and x.startswith("og:"))
+        og_tags = soup.find_all("meta", property=lambda x: x is not None and x.startswith("og:"))
         for tag in og_tags:
-            prop = tag.get("property", "")[3:]  # Remove 'og:' prefix
+            prop = tag["property"][3:]  # Remove 'og:' prefix
             content = tag.get("content")
             if prop and content:
                 metadata[f"og_{prop}"] = content
@@ -826,7 +829,7 @@ class WebScraper(MemoryAwareMixin):
         """Extract all links from the page."""
         links = []
         for link in soup.find_all("a", href=True):
-            href = link["href"]
+            href = str(link["href"])
             absolute_url = urljoin(base_url, href)
             if (
                 absolute_url.startswith("http")
@@ -839,7 +842,7 @@ class WebScraper(MemoryAwareMixin):
         """Extract image URLs from the page."""
         images = []
         for img in soup.find_all("img", src=True):
-            src = img["src"]
+            src = str(img["src"])
             absolute_url = urljoin(base_url, src)
             if absolute_url.startswith("http"):
                 images.append(absolute_url)

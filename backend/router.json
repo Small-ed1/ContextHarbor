@@ -1,0 +1,19 @@
+{
+  "theme": "dark",
+  "accent": "#007bff",
+  "temperature": 0.7,
+  "contextTokens": 8000,
+  "defaultModel": "",
+  "defaultTask": "chat",
+  "showArchived": false,
+  "autoModelSwitch": false,
+  "autoModelSwitchMode": "suggest",
+  "citationFormat": "inline",
+  "maxToolCalls": 10,
+  "researchDepth": "standard",
+  "enableStreaming": true,
+  "debugMode": false,
+  "fontSize": "medium",
+  "animations": true,
+  "memoryLimit": 10
+}

@@ -8,6 +8,7 @@ Type=simple
 User=ollama
 Group=ollama
 Environment=HOME=/var/lib/ollama
+Environment=OLLAMA_NUM_THREAD=12
 WorkingDirectory=/var/lib/ollama
 ExecStart=/usr/local/bin/ollama serve
 Restart=always
@@ -25,7 +26,7 @@ ProtectControlGroups=yes
 
 # Resource limits (adjust based on your hardware)
 MemoryLimit=8G
-CPUQuota=400%
+# CPUQuota removed to allow full CPU usage
 
 [Install]
 WantedBy=multi-user.target

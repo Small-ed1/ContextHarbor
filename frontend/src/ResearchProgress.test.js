@@ -47,7 +47,14 @@ describe('ResearchProgress', () => {
   });
 
   test('creates EventSource with correct URL when taskId is provided', () => {
-    const mockEventSourceSpy = jest.spyOn(global, 'EventSource');
+    const mockEventSource = {
+      url: '/api/research/test-task-123/progress',
+      onopen: null,
+      onmessage: null,
+      onerror: null,
+      close: jest.fn(),
+    };
+    global.EventSource.mockReturnValueOnce(mockEventSource);
 
     render(
       <ResearchProgress
@@ -57,8 +64,7 @@ describe('ResearchProgress', () => {
       />
     );
 
-    expect(mockEventSourceSpy).toHaveBeenCalledWith('/api/research/test-task-123/progress');
-    mockEventSourceSpy.mockRestore();
+    expect(global.EventSource).toHaveBeenCalledWith('/api/research/test-task-123/progress');
   });
 
   test('calls onComplete when progress status is completed', () => {

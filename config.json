@@ -1,0 +1,11 @@
+{
+  "ollama_host": "http://127.0.0.1:11434",
+  "default_model": null,
+  "embedding_model": null,
+  "max_memory_usage_gb": 12.0,
+  "chunk_size": 1000,
+  "max_workers": 4,
+  "enable_gpu": false,
+  "research_time_limit_hours": 24,
+  "rag_maintenance_interval_days": 7
+}

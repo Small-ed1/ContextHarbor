@@ -182,17 +182,14 @@ function App() {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3, ease: "easeInOut" }}
             >
-              <Suspense fallback={
-                <motion.div
-                  className="loading-tab"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  <div className="spinner"></div>
-                  <p>Loading...</p>
-                </motion.div>
-              }>
+               <Suspense fallback={
+                 <div
+                   className="loading-tab"
+                 >
+                   <div className="spinner"></div>
+                   <p>Loading...</p>
+                 </div>
+               }>
                 {showSettings ? (
                   <SettingsPanel
                     onSettingsChange={(settings) => {
@@ -466,6 +463,7 @@ function App() {
             min-height: 100vh;
             padding: clamp(10px, 2vw, 20px);
             box-sizing: border-box;
+            overflow-y: auto;
           }
 
           .main-content.sidebar-closed {

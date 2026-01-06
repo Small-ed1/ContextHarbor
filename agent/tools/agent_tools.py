@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import httpx
-import yaml
+import yaml  # type: ignore
 
 from ..models import Source, SourceType, ToolResult
 
@@ -393,7 +393,7 @@ class KiwixQueryTool(BaseTool):
         self, zim_name: str, query: str, max_results: int = 5
     ) -> List[Dict[str, str]]:
         """Search within a specific ZIM file using suggest then search endpoints."""
-        results: List[Dict[str, str]] = []
+        results: List[Dict[str, Any]] = []
 
         content_name = self._get_zim_content_name(zim_name)
         if not content_name:
@@ -1262,7 +1262,7 @@ class GitHubSearchTool(BaseTool):
     def _search_repos(self, query: str, max_results: int = 5) -> list[dict]:
         """Search GitHub repositories."""
         url = f"{self.api_base}/search/repositories"
-        params = {"q": query, "per_page": max_results, "sort": "stars"}
+        params: Dict[str, Any] = {"q": query, "per_page": max_results, "sort": "stars"}
         try:
             with httpx.Client(timeout=15.0) as client:
                 response = client.get(url, params=params, headers=self.headers)
@@ -1276,7 +1276,7 @@ class GitHubSearchTool(BaseTool):
     def _search_code(self, query: str, max_results: int = 5) -> list[dict]:
         """Search GitHub code."""
         url = f"{self.api_base}/search/code"
-        params = {"q": query, "per_page": max_results}
+        params: Dict[str, Any] = {"q": query, "per_page": max_results}
         try:
             with httpx.Client(timeout=15.0) as client:
                 response = client.get(url, params=params, headers=self.headers)
@@ -1290,7 +1290,7 @@ class GitHubSearchTool(BaseTool):
     def _search_issues(self, query: str, max_results: int = 5) -> list[dict]:
         """Search GitHub issues and PRs."""
         url = f"{self.api_base}/search/issues"
-        params = {"q": query, "per_page": max_results}
+        params: Dict[str, Any] = {"q": query, "per_page": max_results}
         try:
             with httpx.Client(timeout=15.0) as client:
                 response = client.get(url, params=params, headers=self.headers)

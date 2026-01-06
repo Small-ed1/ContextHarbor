@@ -2,6 +2,8 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import pytest
+
 from agent.research.multi_agent_system import (Agent, AgentConfig, AgentRole,
                                                AgentTask)
 from agent.research.research_orchestrator import (ResearchOrchestrator,
@@ -73,6 +75,7 @@ class TestResearchOrchestrator(unittest.TestCase):
         self.assertIsNotNone(orchestrator.strategy_configs)
 
     @patch("asyncio.sleep", new_callable=AsyncMock)
+    @pytest.mark.asyncio
     async def test_execute_research_plan_basic(self, mock_sleep):
         """Test basic research plan execution"""
         orchestrator = ResearchOrchestrator(

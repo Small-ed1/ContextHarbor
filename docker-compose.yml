@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/home/app
+    volumes:
+      - ./backend:/home/app
+      - /tmp/router_servers.log:/tmp/router_servers.log
+    depends_on:
+      - ollama
+    networks:
+      - router-net
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - router-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - router-net
+
+volumes:
+  ollama_data:
+
+networks:
+  router-net:
+    driver: bridge

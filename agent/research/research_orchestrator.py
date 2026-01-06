@@ -141,14 +141,13 @@ class ResearchOrchestrator:
 
         # Initialize iterative research tool for real research
         self.iterative_research_tool = None
-        if (IterativeResearchTool and WebScraper and OllamaClient and OllamaConfig and
-            ScrapingConfig and memory_manager):
+        if memory_manager:
             try:
-                ollama_config = OllamaConfig()
-                ollama_client = OllamaClient(ollama_config)
-                scraping_config = ScrapingConfig()
-                web_scraper = WebScraper(scraping_config, memory_manager)
-                self.iterative_research_tool = IterativeResearchTool(
+                ollama_config = OllamaConfig()  # type: ignore
+                ollama_client = OllamaClient(ollama_config)  # type: ignore
+                scraping_config = ScrapingConfig()  # type: ignore
+                web_scraper = WebScraper(scraping_config, memory_manager)  # type: ignore
+                self.iterative_research_tool = IterativeResearchTool(  # type: ignore
                     ollama_client, web_scraper, memory_manager
                 )
                 self.logger.info("IterativeResearchTool initialized for real research")

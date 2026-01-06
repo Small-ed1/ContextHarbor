@@ -7,7 +7,7 @@ Adapted from ollama_search_tool for integration into the agent system.
 import asyncio
 import logging
 import time
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, cast
 
 from ..ollama_client import OllamaClient, OllamaConfig, GenerationRequest
 from .web_scraper import WebScraper, ScrapingConfig, SearchQuery
@@ -18,7 +18,6 @@ try:
     from ...utils.memory_manager import MemoryManager
 except ImportError:
     MemoryManager = None
-except ImportError:
     MemoryManager = None
 
 logger = logging.getLogger(__name__)
@@ -76,7 +75,7 @@ class IterativeResearchTool:
             logger.info(f"Starting iterative research on '{query}' using model '{model}'")
 
             current_query = query
-            context_parts = []
+            context_parts: List[str] = []
             analysis = ""
             max_iters = 10 if deep_research else max_iterations
             iteration = 0
@@ -125,7 +124,7 @@ class IterativeResearchTool:
 
                 # Step 3: Fetch and extract content
                 logger.info(f"Fetching content from {len(search_results)} sources")
-                new_context_parts = []
+                new_context_parts: List[str] = []
 
                 for title, url in search_results:
                     try:
@@ -226,7 +225,7 @@ class IterativeResearchTool:
 
     async def _fetch_content(self, url: str) -> str:
         """Fetch and extract text content from a URL."""
-        import requests
+        import requests  # type: ignore
         from bs4 import BeautifulSoup
 
         try:
@@ -373,7 +372,7 @@ _iterative_research_tool = None
 async def get_iterative_research_tool(
     ollama_config: Optional[OllamaConfig] = None,
     scraping_config: Optional[ScrapingConfig] = None,
-    memory_manager: Optional[MemoryManager] = None,
+    memory_manager: Optional[Any] = None,
 ) -> IterativeResearchTool:
     """Get or create the global iterative research tool instance."""
     global _iterative_research_tool
@@ -383,18 +382,19 @@ async def get_iterative_research_tool(
             ollama_config = OllamaConfig()
         if scraping_config is None:
             scraping_config = ScrapingConfig()
-        if memory_manager is None:
+        mm = memory_manager
+        if mm is None:
             try:
                 from ...utils.memory_manager import MemoryManager
-                memory_manager = MemoryManager()
+                mm = MemoryManager()
             except ImportError:
-                memory_manager = None
+                mm = None
 
         ollama_client = OllamaClient(ollama_config)
-        web_scraper = WebScraper(scraping_config, memory_manager)
+        web_scraper = WebScraper(scraping_config, mm)  # type: ignore
 
         _iterative_research_tool = IterativeResearchTool(
-            ollama_client, web_scraper, memory_manager
+            ollama_client, web_scraper, mm  # type: ignore
         )
 
     return _iterative_research_tool

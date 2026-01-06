@@ -331,7 +331,7 @@ class OllamaWorker:
 
         expected_python_type = type_mapping.get(expected_type)
         if expected_python_type is not None:
-            return isinstance(value, expected_python_type)
+            return isinstance(value, expected_python_type)  # type: ignore
 
         return True
 

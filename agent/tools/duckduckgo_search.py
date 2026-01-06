@@ -57,6 +57,8 @@ class DuckDuckGoSearchTool:
         Args:
             timeout: Search timeout in seconds
         """
+        self.name = "duckduckgo_search"
+        self.description = "Search the web using DuckDuckGo"
         self.timeout = timeout
         if DDGS is None:
             raise ImportError("duckduckgo-search package is required for DuckDuckGo search")
