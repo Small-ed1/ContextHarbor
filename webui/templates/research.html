@@ -1,0 +1,715 @@
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Research Studio - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="research-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Research Studio</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/research">
+                        <span class="nav-icon">🔬</span>
+                        Active Research
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/research/history">
+                        <span class="nav-icon">📚</span>
+                        Research History
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/research/templates">
+                        <span class="nav-icon">📋</span>
+                        Templates
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/research/analytics">
+                        <span class="nav-icon">📊</span>
+                        Analytics
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Research Studio</h1>
+                <div class="header-actions">
+                    <button class="btn btn-primary" id="newResearchBtn">
+                        <span class="btn-icon">+</span>
+                        New Research
+                    </button>
+                    <button class="btn btn-secondary" id="importResearchBtn">
+                        <span class="btn-icon">📥</span>
+                        Import
+                    </button>
+                    <button class="btn btn-secondary" id="templatesBtn">
+                        <span class="btn-icon">📋</span>
+                        Templates
+                    </button>
+                </div>
+            </header>
+
+            <div class="research-workspace">
+                <div class="research-setup" id="researchSetup">
+                    <div class="setup-card">
+                        <h3>Start New Research</h3>
+                        <form id="researchForm">
+                            <div class="form-group">
+                                <label for="researchTopic">Research Topic</label>
+                                <input type="text" id="researchTopic" placeholder="e.g., 'Impact of AI on healthcare'" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="researchDepth">Research Depth</label>
+                                <select id="researchDepth">
+                                    <option value="quick">Quick Overview (5-10 min)</option>
+                                    <option value="standard" selected>Standard Research (15-30 min)</option>
+                                    <option value="deep">Deep Analysis (1-2 hours)</option>
+                                    <option value="comprehensive">Comprehensive Study (4+ hours)</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="researchScope">Scope & Focus</label>
+                                <textarea id="researchScope" rows="3" placeholder="Describe what aspects to focus on, specific questions to answer, or constraints..."></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Research Agents</label>
+                                <div class="agent-selection">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" checked id="useWebAgent">
+                                        <span class="agent-icon">🌐</span>
+                                        <div>
+                                            <div class="agent-name">Web Research Agent</div>
+                                            <div class="agent-desc">Searches and analyzes web sources</div>
+                                        </div>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" checked id="useKnowledgeAgent">
+                                        <span class="agent-icon">📚</span>
+                                        <div>
+                                            <div class="agent-name">Knowledge Base Agent</div>
+                                            <div class="agent-desc">Leverages existing knowledge</div>
+                                        </div>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="useAnalysisAgent">
+                                        <span class="agent-icon">🧠</span>
+                                        <div>
+                                            <div class="agent-name">Analysis & Synthesis Agent</div>
+                                            <div class="agent-desc">Processes and synthesizes information</div>
+                                        </div>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="useCritiqueAgent">
+                                        <span class="agent-icon">⚖️</span>
+                                        <div>
+                                            <div class="agent-name">Critical Review Agent</div>
+                                            <div class="agent-desc">Validates and critiques findings</div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="timeLimit">Time Limit</label>
+                                <select id="timeLimit">
+                                    <option value="300">5 minutes</option>
+                                    <option value="900" selected>15 minutes</option>
+                                    <option value="1800">30 minutes</option>
+                                    <option value="3600">1 hour</option>
+                                    <option value="7200">2 hours</option>
+                                    <option value="unlimited">No limit</option>
+                                </select>
+                            </div>
+
+                            <div class="research-preview" id="researchPreview" style="display: none;">
+                                <h4>Research Preview</h4>
+                                <div class="preview-content" id="previewContent">
+                                    <!-- Preview will be generated here -->
+                                </div>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" id="previewBtn">👁️ Preview</button>
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    <span class="btn-icon">🚀</span>
+                                    Start Research
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="research-progress" id="researchProgress" style="display: none;">
+                    <div class="progress-header">
+                        <h3 id="progressTitle">Research in Progress</h3>
+                        <div class="progress-actions">
+                            <button class="btn btn-secondary btn-sm" id="pauseResearchBtn">⏸️ Pause</button>
+                            <button class="btn btn-danger btn-sm" id="stopResearchBtn">⏹️ Stop</button>
+                            <button class="btn btn-secondary btn-sm" id="exportProgressBtn">📤 Export</button>
+                        </div>
+                    </div>
+
+                    <div class="progress-visualization">
+                        <div class="main-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="mainProgressFill" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-text">
+                                <span id="mainProgressText">Initializing...</span>
+                                <span id="mainProgressPercent">0%</span>
+                            </div>
+                            <div class="progress-time">
+                                <span id="elapsedTime">00:00</span> elapsed
+                                <span id="estimatedTime">~15:00 remaining</span>
+                            </div>
+                        </div>
+
+                        <div class="phase-progress">
+                            <div class="phase-item active" data-phase="planning">
+                                <div class="phase-icon">📋</div>
+                                <div class="phase-info">
+                                    <div class="phase-name">Planning</div>
+                                    <div class="phase-status">Active</div>
+                                </div>
+                            </div>
+                            <div class="phase-item" data-phase="research">
+                                <div class="phase-icon">🔍</div>
+                                <div class="phase-info">
+                                    <div class="phase-name">Research</div>
+                                    <div class="phase-status">Pending</div>
+                                </div>
+                            </div>
+                            <div class="phase-item" data-phase="analysis">
+                                <div class="phase-icon">🧠</div>
+                                <div class="phase-info">
+                                    <div class="phase-name">Analysis</div>
+                                    <div class="phase-status">Pending</div>
+                                </div>
+                            </div>
+                            <div class="phase-item" data-phase="synthesis">
+                                <div class="phase-icon">📝</div>
+                                <div class="phase-info">
+                                    <div class="phase-name">Synthesis</div>
+                                    <div class="phase-status">Pending</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="agent-progress" id="agentProgress">
+                            <div class="agent-status">
+                                <div class="agent-icon">🔍</div>
+                                <div class="agent-info">
+                                    <div class="agent-name">Web Research Agent</div>
+                                    <div class="agent-task">Searching sources...</div>
+                                </div>
+                                <div class="agent-progress-bar">
+                                    <div class="progress-fill" style="width: 45%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="research-timeline" id="researchTimeline">
+                        <h4>Research Timeline</h4>
+                        <div class="timeline">
+                            <div class="timeline-item completed">
+                                <div class="timeline-marker">✓</div>
+                                <div class="timeline-content">
+                                    <div class="timeline-title">Initialization</div>
+                                    <div class="timeline-time">2 seconds ago</div>
+                                </div>
+                            </div>
+                            <div class="timeline-item active">
+                                <div class="timeline-marker">🔄</div>
+                                <div class="timeline-content">
+                                    <div class="timeline-title">Web Research</div>
+                                    <div class="timeline-time">In progress...</div>
+                                </div>
+                            </div>
+                            <div class="timeline-item pending">
+                                <div class="timeline-marker">⏳</div>
+                                <div class="timeline-content">
+                                    <div class="timeline-title">Knowledge Synthesis</div>
+                                    <div class="timeline-time">Pending</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="live-updates" id="liveUpdates">
+                        <h4>Live Updates</h4>
+                        <div class="updates-list" id="updatesList">
+                            <div class="update-item">
+                                <span class="update-time">14:32:15</span>
+                                <span class="update-message">Web Research Agent found 15 relevant sources</span>
+                            </div>
+                            <div class="update-item">
+                                <span class="update-time">14:32:10</span>
+                                <span class="update-message">Analysis Agent beginning document processing</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="research-results" id="researchResults" style="display: none;">
+                    <div class="results-header">
+                        <h3>Research Results</h3>
+                        <div class="results-actions">
+                            <button class="btn btn-primary" id="exportResultsBtn">📤 Export</button>
+                            <button class="btn btn-secondary" id="saveToKnowledgeBtn">📚 Save to Knowledge</button>
+                            <button class="btn btn-secondary" id="newResearchFromResultsBtn">🔄 New Research</button>
+                            <button class="btn btn-secondary" id="shareResultsBtn">🔗 Share</button>
+                        </div>
+                    </header>
+
+                    <div class="results-content">
+                        <div class="results-summary">
+                            <h4>Executive Summary</h4>
+                            <div id="executiveSummary" class="summary-content">
+                                <!-- Summary will be loaded here -->
+                            </div>
+                        </div>
+
+                        <div class="results-tabs">
+                            <div class="tab-buttons">
+                                <button class="tab-btn active" data-tab="findings">Key Findings</button>
+                                <button class="tab-btn" data-tab="sources">Sources</button>
+                                <button class="tab-btn" data-tab="analysis">Analysis</button>
+                                <button class="tab-btn" data-tab="recommendations">Recommendations</button>
+                            </div>
+
+                            <div class="tab-content">
+                                <div class="tab-pane active" id="findingsTab">
+                                    <div id="keyFindings" class="findings-content">
+                                        <!-- Findings will be loaded here -->
+                                    </div>
+                                </div>
+                                <div class="tab-pane" id="sourcesTab">
+                                    <div id="sourcesList" class="sources-content">
+                                        <!-- Sources will be loaded here -->
+                                    </div>
+                                </div>
+                                <div class="tab-pane" id="analysisTab">
+                                    <div id="detailedAnalysis" class="analysis-content">
+                                        <!-- Analysis will be loaded here -->
+                                    </div>
+                                </div>
+                                <div class="tab-pane" id="recommendationsTab">
+                                    <div id="recommendations" class="recommendations-content">
+                                        <!-- Recommendations will be loaded here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Research Templates Modal -->
+    <div class="modal" id="templatesModal" style="display: none;">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Research Templates</h3>
+                <button class="modal-close" onclick="closeTemplatesModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="templates-grid">
+                    <div class="template-card" onclick="loadTemplate('literature-review')">
+                        <div class="template-icon">📖</div>
+                        <h4>Literature Review</h4>
+                        <p>Comprehensive review of existing research and publications</p>
+                        <div class="template-meta">Est. time: 45 min</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('market-analysis')">
+                        <div class="template-icon">📊</div>
+                        <h4>Market Analysis</h4>
+                        <p>Analyze market trends, competition, and opportunities</p>
+                        <div class="template-meta">Est. time: 30 min</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('technical-feasibility')">
+                        <div class="template-icon">⚙️</div>
+                        <h4>Technical Feasibility</h4>
+                        <p>Assess technical requirements and implementation options</p>
+                        <div class="template-meta">Est. time: 25 min</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('comparative-study')">
+                        <div class="template-icon">⚖️</div>
+                        <h4>Comparative Study</h4>
+                        <p>Compare different approaches, products, or methodologies</p>
+                        <div class="template-meta">Est. time: 35 min</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('swot-analysis')">
+                        <div class="template-icon">🎯</div>
+                        <h4>SWOT Analysis</h4>
+                        <p>Strengths, Weaknesses, Opportunities, Threats analysis</p>
+                        <div class="template-meta">Est. time: 20 min</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('case-study')">
+                        <div class="template-icon">📋</div>
+                        <h4>Case Study</h4>
+                        <p>In-depth analysis of a specific case or scenario</p>
+                        <div class="template-meta">Est. time: 60 min</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentResearchTaskId = null;
+        let researchProgressInterval = null;
+        let startTime = null;
+
+        document.addEventListener('DOMContentLoaded', function() {{
+            const token = localStorage.getItem('accessToken');
+            if (!token) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            initializeResearch();
+            setupEventListeners();
+        }});
+
+        function initializeResearch() {{
+            loadResearchSessions();
+        }}
+
+        function setupEventListeners() {{
+            document.getElementById('researchForm').addEventListener('submit', startResearch);
+            document.getElementById('newResearchBtn').addEventListener('click', showResearchSetup);
+            document.getElementById('templatesBtn').addEventListener('click', showTemplatesModal);
+            document.getElementById('previewBtn').addEventListener('click', generatePreview);
+            document.getElementById('pauseResearchBtn').addEventListener('click', pauseResearch);
+            document.getElementById('stopResearchBtn').addEventListener('click', stopResearch);
+            document.getElementById('exportProgressBtn').addEventListener('click', exportProgress);
+
+            // Tab switching for results
+            document.querySelectorAll('.tab-btn').forEach(btn => {{
+                btn.addEventListener('click', switchResultsTab);
+            }});
+        }}
+
+        async function loadResearchSessions() {{
+            const token = localStorage.getItem('accessToken');
+            try {{
+                const response = await fetch('/api/research/sessions', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (response.ok) {{
+                    const data = await response.json();
+                    const activeSession = data.sessions.find(s => s.status === 'running' || s.status === 'in_progress');
+
+                    if (activeSession) {{
+                        currentResearchTaskId = activeSession.id;
+                        showResearchProgress(activeSession);
+                        startProgressMonitoring();
+                    }}
+                }}
+            }} catch (error) {{
+                console.error('Failed to load research sessions:', error);
+            }}
+        }}
+
+        function showTemplatesModal() {{
+            document.getElementById('templatesModal').style.display = 'flex';
+        }}
+
+        function closeTemplatesModal() {{
+            document.getElementById('templatesModal').style.display = 'none';
+        }}
+
+        function loadTemplate(templateId) {{
+            const templates = {{
+                'literature-review': {{
+                    topic: 'Literature Review: [Topic]',
+                    depth: 'deep',
+                    scope: 'Comprehensive analysis of existing research, methodologies, findings, and gaps in the literature.',
+                    agents: ['useWebAgent', 'useKnowledgeAgent', 'useAnalysisAgent']
+                }},
+                'market-analysis': {{
+                    topic: 'Market Analysis: [Industry/Product]',
+                    depth: 'standard',
+                    scope: 'Market size, growth trends, competitive landscape, customer segments, and strategic opportunities.',
+                    agents: ['useWebAgent', 'useAnalysisAgent']
+                }},
+                'technical-feasibility': {{
+                    topic: 'Technical Feasibility Study: [Project/Feature]',
+                    depth: 'standard',
+                    scope: 'Technical requirements, implementation approaches, resource needs, and risk assessment.',
+                    agents: ['useKnowledgeAgent', 'useAnalysisAgent']
+                }},
+                'comparative-study': {{
+                    topic: 'Comparative Analysis: [Options]',
+                    depth: 'standard',
+                    scope: 'Feature comparison, performance metrics, pros/cons analysis, and recommendation.',
+                    agents: ['useWebAgent', 'useAnalysisAgent', 'useCritiqueAgent']
+                }},
+                'swot-analysis': {{
+                    topic: 'SWOT Analysis: [Subject]',
+                    depth: 'quick',
+                    scope: 'Strengths, Weaknesses, Opportunities, and Threats analysis with actionable insights.',
+                    agents: ['useAnalysisAgent', 'useCritiqueAgent']
+                }},
+                'case-study': {{
+                    topic: 'Case Study: [Subject]',
+                    depth: 'comprehensive',
+                    scope: 'In-depth analysis of background, methodology, results, and lessons learned.',
+                    agents: ['useWebAgent', 'useKnowledgeAgent', 'useAnalysisAgent', 'useCritiqueAgent']
+                }}
+            }};
+
+            const template = templates[templateId];
+            if (!template) return;
+
+            // Fill form with template data
+            document.getElementById('researchTopic').value = template.topic;
+            document.getElementById('researchDepth').value = template.depth;
+            document.getElementById('researchScope').value = template.scope;
+
+            // Check appropriate agents
+            document.querySelectorAll('.agent-selection input').forEach(checkbox => {{
+                checkbox.checked = template.agents.includes(checkbox.id);
+            }});
+
+            closeTemplatesModal();
+            UI.showToast(`Loaded ${templateId.replace('-', ' ')} template`, 'success');
+        }}
+
+        function generatePreview() {{
+            const topic = document.getElementById('researchTopic').value;
+            const depth = document.getElementById('researchDepth').value;
+            const scope = document.getElementById('researchScope').value;
+
+            if (!topic) {{
+                UI.showToast('Please enter a research topic first', 'warning');
+                return;
+            }}
+
+            const preview = document.getElementById('researchPreview');
+            const content = document.getElementById('previewContent');
+
+            let agentCount = 0;
+            document.querySelectorAll('.agent-selection input:checked').forEach(() => agentCount++);
+
+            const timeEstimates = {{
+                'quick': '5-10 minutes',
+                'standard': '15-30 minutes',
+                'deep': '1-2 hours',
+                'comprehensive': '4+ hours'
+            }};
+
+            content.innerHTML = `
+                <div class="preview-section">
+                    <h5>📝 Research Plan</h5>
+                    <p><strong>Topic:</strong> ${{topic}}</p>
+                    <p><strong>Depth:</strong> ${{depth.charAt(0).toUpperCase() + depth.slice(1)}}</p>
+                    <p><strong>Agents:</strong> ${{agentCount}} selected</p>
+                    <p><strong>Estimated Time:</strong> ${{timeEstimates[depth]}}</p>
+                </div>
+                <div class="preview-section">
+                    <h5>🎯 Scope</h5>
+                    <p>${{scope || 'No specific scope defined'}}</p>
+                </div>
+                <div class="preview-section">
+                    <h5>📊 Expected Output</h5>
+                    <ul>
+                        <li>Executive summary with key findings</li>
+                        <li>Detailed analysis and insights</li>
+                        <li>Source citations and references</li>
+                        <li>Recommendations and next steps</li>
+                    </ul>
+                </div>
+            `;
+
+            preview.style.display = 'block';
+            preview.scrollIntoView({{ behavior: 'smooth' }});
+        }}
+
+        async function startResearch(e) {{
+            e.preventDefault();
+
+            const token = localStorage.getItem('accessToken');
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            // Get selected agents
+            data.agents = [];
+            if (document.getElementById('useWebAgent').checked) data.agents.push('web');
+            if (document.getElementById('useKnowledgeAgent').checked) data.agents.push('knowledge');
+            if (document.getElementById('useAnalysisAgent').checked) data.agents.push('analysis');
+            if (document.getElementById('useCritiqueAgent').checked) data.agents.push('critique');
+
+            try {{
+                const response = await fetch('/api/research/start', {{
+                    method: 'POST',
+                    headers: {{
+                        'Authorization': `Bearer ${{token}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(data)
+                }});
+
+                if (response.ok) {{
+                    const result = await response.json();
+                    currentResearchTaskId = result.task_id;
+                    startTime = Date.now();
+                    showResearchProgress(result);
+                    startProgressMonitoring();
+                    UI.showToast('Research started successfully!', 'success');
+                }} else {{
+                    const error = await response.json();
+                    UI.showToast('Research failed: ' + (error.error || 'Unknown error'), 'error');
+                }}
+            }} catch (error) {{
+                UI.showToast('Failed to start research: ' + error.message, 'error');
+            }}
+        }}
+
+        function showResearchProgress(session) {{
+            document.getElementById('researchSetup').style.display = 'none';
+            document.getElementById('researchProgress').style.display = 'block';
+            document.getElementById('progressTitle').textContent = `Research: ${{session.query}}`;
+
+            updateProgressDisplay(session);
+        }}
+
+        function updateProgressDisplay(session) {{
+            const progressFill = document.getElementById('mainProgressFill');
+            const progressText = document.getElementById('mainProgressText');
+            const progressPercent = document.getElementById('mainProgressPercent');
+
+            const progress = session.progress || 0;
+            progressFill.style.width = `${{progress}}%`;
+            progressPercent.textContent = `${{progress}}%`;
+            progressText.textContent = session.status || 'Running...';
+
+            // Update elapsed time
+            if (startTime) {{
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('elapsedTime').textContent =
+                    `${{minutes.toString().padStart(2, '0')}}:${{seconds.toString().padStart(2, '0')}}`;
+            }}
+
+            // Update phase progress
+            updatePhaseProgress(session);
+        }}
+
+        function updatePhaseProgress(session) {{
+            const phases = ['planning', 'research', 'analysis', 'synthesis'];
+            const currentPhaseIndex = Math.floor((session.progress || 0) / 25);
+
+            phases.forEach((phase, index) => {{
+                const phaseEl = document.querySelector(`[data-phase="${{phase}}"]`);
+                phaseEl.classList.remove('active', 'completed');
+
+                if (index < currentPhaseIndex) {{
+                    phaseEl.classList.add('completed');
+                }} else if (index === currentPhaseIndex) {{
+                    phaseEl.classList.add('active');
+                }}
+            }});
+        }}
+
+        function startProgressMonitoring() {{
+            if (researchProgressInterval) clearInterval(researchProgressInterval);
+
+            researchProgressInterval = setInterval(async () => {{
+                if (!currentResearchTaskId) return;
+
+                const token = localStorage.getItem('accessToken');
+                try {{
+                    const response = await fetch(`/api/research/${{currentResearchTaskId}}/status`, {{
+                        headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                    }});
+
+                    if (response.ok) {{
+                        const status = await response.json();
+                        updateProgressDisplay(status);
+
+                        if (status.status === 'completed' || status.status === 'failed') {{
+                            clearInterval(researchProgressInterval);
+                            showResearchResults(status);
+                        }}
+                    }}
+                }} catch (error) {{
+                    console.error('Failed to get research status:', error);
+                }}
+            }}, 2000);
+        }}
+
+        function showResearchResults(results) {{
+            document.getElementById('researchProgress').style.display = 'none';
+            document.getElementById('researchResults').style.display = 'block';
+
+            // Populate results (placeholder for actual implementation)
+            document.getElementById('executiveSummary').innerHTML =
+                results.summary || '<p>Research completed successfully. Results summary will be displayed here.</p>';
+
+            document.getElementById('keyFindings').innerHTML =
+                results.findings || '<p>Key findings and insights will be listed here.</p>';
+
+            document.getElementById('sourcesList').innerHTML =
+                results.sources || '<p>Source citations and references will be listed here.</p>';
+
+            document.getElementById('detailedAnalysis').innerHTML =
+                results.analysis || '<p>Detailed analysis and methodology will be shown here.</p>';
+
+            document.getElementById('recommendations').innerHTML =
+                results.recommendations || '<p>Recommendations and next steps will be provided here.</p>';
+
+            UI.showToast('Research completed!', 'success');
+        }}
+
+        function showResearchSetup() {{
+            document.getElementById('researchProgress').style.display = 'none';
+            document.getElementById('researchResults').style.display = 'none';
+            document.getElementById('researchSetup').style.display = 'block';
+            document.getElementById('researchPreview').style.display = 'none';
+        }}
+
+        function switchResultsTab(e) {{
+            const tabId = e.target.dataset.tab;
+
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {{
+                btn.classList.remove('active');
+            }});
+            e.target.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tab-pane').forEach(pane => {{
+                pane.classList.remove('active');
+            }});
+            document.getElementById(tabId + 'Tab').classList.add('active');
+        }}
+
+        // Placeholder functions
+        function pauseResearch() {{ UI.showToast('Pause functionality coming soon!', 'info'); }}
+        function stopResearch() {{ UI.showToast('Stop functionality implemented via API', 'info'); }}
+        function exportProgress() {{ UI.showToast('Progress export coming soon!', 'info'); }}
+        function exportResults() {{ UI.showToast('Results export coming soon!', 'info'); }}
+        function saveToKnowledge() {{ UI.showToast('Knowledge saving coming soon!', 'info'); }}
+        function newResearchFromResults() {{ showResearchSetup(); }}
+        function shareResults() {{ UI.showToast('Results sharing coming soon!', 'info'); }}
+    </script>
+</body>

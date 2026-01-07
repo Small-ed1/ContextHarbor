@@ -5,7 +5,7 @@ Adapted from ollama_search_tool for integration into the agent system.
 """
 
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 try:
     from ddgs import DDGS
@@ -31,14 +31,34 @@ def is_safe_url(url: str) -> bool:
 
         # Skip common non-content domains
         skip_domains = [
-            "google", "facebook", "twitter", "instagram", "youtube",
-            "amazon", "ebay", "pinterest", "linkedin"
+            "google",
+            "facebook",
+            "twitter",
+            "instagram",
+            "youtube",
+            "amazon",
+            "ebay",
+            "pinterest",
+            "linkedin",
         ]
         if any(domain in parsed.netloc for domain in skip_domains):
             return False
 
         # Skip file extensions that aren't HTML
-        skip_extensions = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".rar", ".7z", ".tar", ".gz"]
+        skip_extensions = [
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
+            ".ppt",
+            ".pptx",
+            ".zip",
+            ".rar",
+            ".7z",
+            ".tar",
+            ".gz",
+        ]
         if any(url.lower().endswith(ext) for ext in skip_extensions):
             return False
 
@@ -61,9 +81,13 @@ class DuckDuckGoSearchTool:
         self.description = "Search the web using DuckDuckGo"
         self.timeout = timeout
         if DDGS is None:
-            raise ImportError("duckduckgo-search package is required for DuckDuckGo search")
+            raise ImportError(
+                "duckduckgo-search package is required for DuckDuckGo search"
+            )
 
-    def search(self, query: str, limit: int = 5, timeout: Optional[int] = None) -> List[Tuple[str, str]]:
+    def search(
+        self, query: str, limit: int = 5, timeout: Optional[int] = None
+    ) -> List[Tuple[str, str]]:
         """Search the web using DuckDuckGo.
 
         Args:
@@ -103,7 +127,9 @@ class DuckDuckGoSearchTool:
                 if title and url and is_safe_url(url):
                     valid_results.append((title, url))
                 else:
-                    logger.debug(f"Skipping invalid result: title='{title}', url='{url}'")
+                    logger.debug(
+                        f"Skipping invalid result: title='{title}', url='{url}'"
+                    )
 
             logger.info(f"Found {len(valid_results)} valid search results")
             return valid_results[:limit]
@@ -115,6 +141,7 @@ class DuckDuckGoSearchTool:
 
 # Global instance for easy access
 _duckduckgo_search_tool = None
+
 
 def get_duckduckgo_search_tool() -> DuckDuckGoSearchTool:
     """Get or create the global DuckDuckGo search tool instance."""

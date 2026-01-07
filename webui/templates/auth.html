@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% if mode == "login" %}Login{% else %}Register{% endif %} - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="auth-page">
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>Welcome to Router Phase 1</h1>
+                <p>Your AI-powered research companion</p>
+            </div>
+
+            <form class="auth-form" id="authForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full">
+                    {% if mode == "login" %}Login{% else %}Register{% endif %}
+                </button>
+            </form>
+
+            <div class="auth-divider">
+                <span>or</span>
+            </div>
+
+            <div class="social-auth">
+                <button class="btn btn-social btn-google">
+                    <span class="social-icon">G</span>
+                    Continue with Google
+                </button>
+                <button class="btn btn-social btn-github">
+                    <span class="social-icon">GH</span>
+                    Continue with GitHub
+                </button>
+            </div>
+
+            <div class="auth-footer">
+                <p>{% if mode == "login" %}Don't have an account? <a href="/register">Register</a>{% else %}Already have an account? <a href="/login">Login</a>{% endif %}</p>
+            </div>
+        </div>
+
+        <div class="auth-features">
+            <div class="feature-item">
+                <div class="feature-icon">🚀</div>
+                <h3>Quick Setup</h3>
+                <p>Get started in under 5 minutes</p>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">🔒</div>
+                <h3>Secure</h3>
+                <p>Your data stays local and private</p>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">🤖</div>
+                <h3>AI-Powered</h3>
+                <p>Advanced AI agents for research</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                const response = await fetch('{% if mode == "login" %}/api/auth/login{% else %}/api/auth/register{% endif %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('accessToken', result.access_token);
+                    window.location.href = '/dashboard';
+                } else {
+                    alert(result.detail || 'Authentication failed');
+                }
+            } catch (error) {
+                alert('Network error: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>

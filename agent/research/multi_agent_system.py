@@ -503,10 +503,7 @@ Please provide a comprehensive response focusing on your area of expertise.
     ) -> Dict[str, Any]:
         """Generate a coordination plan using the overseer."""
         if self.overseer_agent is None:
-            return {
-                "recommendations": "Overseer agent not initialized",
-                "actions": []
-            }
+            return {"recommendations": "Overseer agent not initialized", "actions": []}
 
         status_summary = f"""
 System Status:
@@ -662,6 +659,7 @@ Please analyze this status and provide coordination recommendations.
     async def cleanup_completed_tasks(self, max_age_hours: int = 24):
         """Clean up old completed tasks to prevent memory leaks."""
         from datetime import timedelta
+
         cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
 
         # Clean up active_tasks
@@ -685,6 +683,7 @@ Please analyze this status and provide coordination recommendations.
     async def cleanup_inactive_agents(self, max_idle_hours: int = 48):
         """Remove agents that have been idle for too long."""
         from datetime import timedelta
+
         cutoff_time = datetime.now() - timedelta(hours=max_idle_hours)
         agents_to_remove = []
 
@@ -692,8 +691,11 @@ Please analyze this status and provide coordination recommendations.
             if agent_id == "overseer":
                 continue  # Don't remove overseer
 
-            if (agent.state == AgentState.IDLE and
-                agent.last_active and agent.last_active < cutoff_time):
+            if (
+                agent.state == AgentState.IDLE
+                and agent.last_active
+                and agent.last_active < cutoff_time
+            ):
                 agents_to_remove.append(agent_id)
 
         for agent_id in agents_to_remove:
@@ -707,5 +709,6 @@ Please analyze this status and provide coordination recommendations.
 
         # Force garbage collection
         import gc
+
         collected = gc.collect()
         self.logger.debug(f"Garbage collection freed {collected} objects")

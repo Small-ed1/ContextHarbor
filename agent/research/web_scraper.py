@@ -45,7 +45,7 @@ except ImportError:
     EC = None
     ChromeDriverManager = None
 
-from ..utils.memory_manager import MemoryAwareMixin, MemoryManager
+from utils.memory_manager import MemoryAwareMixin, MemoryManager
 
 
 @dataclass
@@ -138,7 +138,11 @@ class WebScraper(MemoryAwareMixin):
         self.cache_dir.mkdir(exist_ok=True)
 
         self.logger = logging.getLogger(__name__)
-        self.ua = UserAgent() if UserAgent is not None and config.user_agent_rotation else None
+        self.ua = (
+            UserAgent()
+            if UserAgent is not None and config.user_agent_rotation
+            else None
+        )
 
         # Session tracking
         self.session: Optional[aiohttp.ClientSession] = None
@@ -368,7 +372,8 @@ class WebScraper(MemoryAwareMixin):
 
     async def _scrape_bing_results(self, query: SearchQuery) -> List[str]:
         """Scrape Bing search results."""
-        assert self.session is not None
+        if self.session is None:
+            raise RuntimeError("HTTP session not initialized")
         urls = []
 
         try:
@@ -467,7 +472,8 @@ class WebScraper(MemoryAwareMixin):
         self, urls: List[str], topic: str, max_results: int
     ) -> List[ScrapedContent]:
         """Scrape content from URLs in batches with rate limiting."""
-        assert self.current_session is not None
+        if self.current_session is None:
+            raise RuntimeError("Current session not initialized")
         session = self.current_session
         scraped_content: List[ScrapedContent] = []
         semaphore = asyncio.Semaphore(self.config.max_concurrent_requests)
@@ -806,7 +812,9 @@ class WebScraper(MemoryAwareMixin):
                 metadata[name] = content
 
         # Open Graph tags
-        og_tags = soup.find_all("meta", property=lambda x: x is not None and x.startswith("og:"))
+        og_tags = soup.find_all(
+            "meta", property=lambda x: x is not None and x.startswith("og:")
+        )
         for tag in og_tags:
             prop = tag["property"][3:]  # Remove 'og:' prefix
             content = tag.get("content")
@@ -1116,6 +1124,7 @@ class WebScraper(MemoryAwareMixin):
     def cleanup_cache(self, max_age_hours: int = 24):
         """Clean up old cache entries to prevent memory leaks."""
         from datetime import datetime, timedelta
+
         cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
 
         # Clean content cache
@@ -1137,10 +1146,12 @@ class WebScraper(MemoryAwareMixin):
             del self.robots_cache[url]
 
         # Clean old cache files
-        if hasattr(self, 'cache_dir') and self.cache_dir.exists():
+        if hasattr(self, "cache_dir") and self.cache_dir.exists():
             for cache_file in self.cache_dir.glob("*.json"):
                 if cache_file.stat().st_mtime < cutoff_time.timestamp():
                     cache_file.unlink()
 
-        self.logger.info(f"Cleaned up {len(urls_to_remove)} content cache entries, "
-                        f"{len(robots_to_remove)} robots cache entries")
+        self.logger.info(
+            f"Cleaned up {len(urls_to_remove)} content cache entries, "
+            f"{len(robots_to_remove)} robots cache entries"
+        )

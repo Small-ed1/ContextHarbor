@@ -7,12 +7,13 @@ Adapted from ollama_search_tool for integration into the agent system.
 import asyncio
 import logging
 import time
-from typing import List, Tuple, Optional, Dict, Any, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
-from ..ollama_client import OllamaClient, OllamaConfig, GenerationRequest
-from .web_scraper import WebScraper, ScrapingConfig, SearchQuery
-from ..tools.duckduckgo_search import get_duckduckgo_search_tool, DuckDuckGoSearchTool
+from ..ollama_client import GenerationRequest, OllamaClient, OllamaConfig
 from ..tools.agent_tools import BaseTool, ToolResult
+from ..tools.duckduckgo_search import (DuckDuckGoSearchTool,
+                                       get_duckduckgo_search_tool)
+from .web_scraper import ScrapingConfig, SearchQuery, WebScraper
 
 try:
     from ...utils.memory_manager import MemoryManager
@@ -72,7 +73,9 @@ class IterativeResearchTool:
             Exception: If research fails
         """
         try:
-            logger.info(f"Starting iterative research on '{query}' using model '{model}'")
+            logger.info(
+                f"Starting iterative research on '{query}' using model '{model}'"
+            )
 
             current_query = query
             context_parts: List[str] = []
@@ -82,13 +85,17 @@ class IterativeResearchTool:
             start_time = time.time()
             time_limit = 1800 if deep_research else None  # 30 minutes for deep research
 
-            while iteration < max_iters and (time_limit is None or time.time() - start_time < time_limit):
+            while iteration < max_iters and (
+                time_limit is None or time.time() - start_time < time_limit
+            ):
                 logger.info(f"Research iteration {iteration + 1}/{max_iters}")
 
                 # Step 1: Break down query with LLM (first iteration only)
                 if iteration == 0 and current_query == query:
                     logger.info("Breaking down initial query with LLM")
-                    breakdown_queries = await self._break_down_query(query, model, ollama_timeout)
+                    breakdown_queries = await self._break_down_query(
+                        query, model, ollama_timeout
+                    )
                     if not breakdown_queries:
                         breakdown_queries = [query]
                 else:
@@ -113,7 +120,7 @@ class IterativeResearchTool:
                         search_results.append((title, url))
                         seen_urls.add(url)
 
-                search_results = search_results[:search_limit * len(breakdown_queries)]
+                search_results = search_results[: search_limit * len(breakdown_queries)]
 
                 if not search_results:
                     logger.warning("No search results found")
@@ -132,7 +139,9 @@ class IterativeResearchTool:
                         content = await self._fetch_content(url)
                         if content.strip():
                             source_num = len(context_parts) + len(new_context_parts) + 1
-                            new_context_parts.append(f"SOURCE {source_num}: {title}\n{content}")
+                            new_context_parts.append(
+                                f"SOURCE {source_num}: {title}\n{content}"
+                            )
                             logger.debug(f"Successfully fetched content from {url}")
                         else:
                             logger.warning(f"No content extracted from {url}")
@@ -168,7 +177,9 @@ class IterativeResearchTool:
                         current_query = lines[-1].replace("NEED_MORE_INFO", "").strip()
                         if not current_query:
                             current_query = query
-                        logger.info(f"LLM requested more info with query: '{current_query}'")
+                        logger.info(
+                            f"LLM requested more info with query: '{current_query}'"
+                        )
                         iteration += 1
                         continue
                     else:
@@ -187,7 +198,9 @@ class IterativeResearchTool:
             logger.error(f"Research failed: {e}")
             raise
 
-    async def _break_down_query(self, query: str, model: str, timeout: int) -> List[str]:
+    async def _break_down_query(
+        self, query: str, model: str, timeout: int
+    ) -> List[str]:
         """Use LLM to break down research query into focused search queries."""
         breakdown_prompt = (
             f"Given this research query: '{query}'\n\n"
@@ -212,7 +225,10 @@ class IterativeResearchTool:
 
             # Parse queries
             import re
-            query_matches = re.findall(r'Query \d+:\s*(.+)', breakdown_response, re.IGNORECASE)
+
+            query_matches = re.findall(
+                r"Query \d+:\s*(.+)", breakdown_response, re.IGNORECASE
+            )
             if query_matches:
                 return [q.strip() for q in query_matches[:4]]
             else:
@@ -300,7 +316,7 @@ class IterativeResearchToolClass(BaseTool):
     def __init__(self):
         super().__init__(
             "iterative_research",
-            "Perform iterative web research with LLM-driven query refinement and analysis"
+            "Perform iterative web research with LLM-driven query refinement and analysis",
         )
         self._tool_instance = None
 
@@ -369,6 +385,7 @@ class IterativeResearchToolClass(BaseTool):
 # Global instance management
 _iterative_research_tool = None
 
+
 async def get_iterative_research_tool(
     ollama_config: Optional[OllamaConfig] = None,
     scraping_config: Optional[ScrapingConfig] = None,
@@ -386,6 +403,7 @@ async def get_iterative_research_tool(
         if mm is None:
             try:
                 from ...utils.memory_manager import MemoryManager
+
                 mm = MemoryManager()
             except ImportError:
                 mm = None

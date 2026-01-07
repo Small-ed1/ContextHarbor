@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from agent.context import RunContext
 
 if TYPE_CHECKING:
     from agent.controller import Controller
+
 from agent.models import StepResult, StepType, ToolResult
 from agent.steps.base import BaseStep
 

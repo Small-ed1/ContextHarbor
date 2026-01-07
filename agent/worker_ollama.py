@@ -118,7 +118,9 @@ class OllamaWorker:
                                     full_response += data["response"]
                                 elif "error" in data:
                                     # Handle error responses from Ollama
-                                    raise RuntimeError(f"Ollama API error: {data['error']}")
+                                    raise RuntimeError(
+                                        f"Ollama API error: {data['error']}"
+                                    )
                             except json.JSONDecodeError as e:
                                 # Log the problematic line for debugging
                                 print(
@@ -137,10 +139,13 @@ class OllamaWorker:
             except Exception as e:
                 if attempt == max_retries - 1:
                     # Last attempt failed
-                    raise RuntimeError(f"Ollama request failed after {max_retries} attempts: {str(e)}")
+                    raise RuntimeError(
+                        f"Ollama request failed after {max_retries} attempts: {str(e)}"
+                    )
                 # Wait before retry (exponential backoff)
                 import time
-                time.sleep(1 * (2 ** attempt))
+
+                time.sleep(1 * (2**attempt))
         # This should never be reached
         raise RuntimeError("All retry attempts failed")
 

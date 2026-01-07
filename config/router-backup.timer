@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Router Phase 1 backup daily
+Requires=router-backup.service
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

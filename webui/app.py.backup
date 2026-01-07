@@ -1,0 +1,4258 @@
+from __future__ import annotations
+import json
+import os
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, Request, Depends, status
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from backend.database import Database
+from backend.auth import AuthManager, auth_manager
+from backend.config import AutoConfig
+
+APP_TITLE = "Router Phase 1 - Simple Chat"
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
+
+app = FastAPI(title=APP_TITLE)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="webui/static"), name="static")
+
+# Security
+security = HTTPBearer(auto_error=False)
+
+# Database and services
+db = Database()
+config_manager = AutoConfig()
+
+# Pydantic models
+class ChatRequest(BaseModel):
+    text: str
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    profile: dict
+
+# Auth dependencies
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    if not credentials:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token required")
+
+    user = auth_manager.verify_token(credentials.credentials)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    return user
+
+def _load_config() -> dict:
+    return config_manager.load_config()
+
+# Authentication endpoints
+@app.post("/api/auth/register", response_model=TokenResponse)
+async def register(request: RegisterRequest):
+    user_id = auth_manager.create_user(request.username, request.password)
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    user = auth_manager.authenticate_user(request.username, request.password)
+    if not user:
+        raise HTTPException(status_code=500, detail="Registration failed")
+
+    access_token = auth_manager.create_access_token({"sub": user["username"], "user_id": user["id"]})
+    return TokenResponse(access_token=access_token)
+
+@app.post("/api/auth/login", response_model=TokenResponse)
+async def login(request: LoginRequest):
+    user = auth_manager.authenticate_user(request.username, request.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    access_token = auth_manager.create_access_token({"sub": user["username"], "user_id": user["id"]})
+    return TokenResponse(access_token=access_token)
+
+@app.get("/api/auth/me", response_model=UserResponse)
+async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    return UserResponse(**current_user)
+
+# New UI Phase: Modern Component-Based Architecture
+# This phase focuses on creating a polished, professional UI with advanced features
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return modern_home_page()
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    return modern_auth_page("login")
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page():
+    return modern_auth_page("register")
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_page():
+    return modern_dashboard_page()
+
+@app.get("/chat/{chat_id}", response_class=HTMLResponse)
+def chat_page(chat_id: str):
+    return modern_chat_page(chat_id)
+
+@app.get("/research", response_class=HTMLResponse)
+def research_page():
+    return modern_research_page()
+
+@app.get("/knowledge", response_class=HTMLResponse)
+def knowledge_page():
+    return modern_knowledge_page()
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page():
+    return modern_settings_page()
+
+@app.get("/profile", response_class=HTMLResponse)
+def profile_page():
+    return modern_profile_page()
+
+@app.get("/help", response_class=HTMLResponse)
+def help_page():
+    return modern_help_page()
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    return modern_admin_page()
+
+def modern_home_page():
+    """Modern landing page with feature showcase"""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Router Phase 1 - AI-Powered Research Assistant</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="landing-page">
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h1>Router Phase 1</h1>
+                <span class="tagline">AI-Powered Research Assistant</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#demo" class="nav-link">Demo</a>
+                <a href="/login" class="btn btn-primary">Get Started</a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="hero-container">
+            <div class="hero-content">
+                <h1 class="hero-title">Intelligent Research<br>at Your Fingertips</h1>
+                <p class="hero-subtitle">Experience the future of AI-assisted research with multi-agent systems, knowledge graphs, and seamless collaboration.</p>
+                <div class="hero-actions">
+                    <a href="/register" class="btn btn-primary btn-lg">Start Free Trial</a>
+                    <a href="#demo" class="btn btn-secondary btn-lg">Watch Demo</a>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="mockup-container">
+                    <div class="mockup-screen">
+                        <div class="mockup-header">
+                            <div class="mockup-dots">
+                                <span class="dot red"></span>
+                                <span class="dot yellow"></span>
+                                <span class="dot green"></span>
+                            </div>
+                            <div class="mockup-title">Research Dashboard</div>
+                        </div>
+                        <div class="mockup-content">
+                            <div class="mockup-sidebar">
+                                <div class="mockup-nav-item active">📊 Dashboard</div>
+                                <div class="mockup-nav-item">💬 Chat</div>
+                                <div class="mockup-nav-item">🔬 Research</div>
+                                <div class="mockup-nav-item">📚 Knowledge</div>
+                            </div>
+                            <div class="mockup-main">
+                                <div class="mockup-card">
+                                    <h3>Active Research Sessions</h3>
+                                    <div class="mockup-progress">
+                                        <div class="progress-bar" style="width: 75%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-header">
+                <h2>Powerful Features for Modern Research</h2>
+                <p>Everything you need to conduct thorough, efficient research with AI assistance.</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3>Multi-Agent Research</h3>
+                    <p>Deploy specialized AI agents for different research tasks, from data collection to analysis and synthesis.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📚</div>
+                    <h3>Knowledge Graphs</h3>
+                    <p>Build and explore interconnected knowledge bases with visual graph representations and semantic search.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💬</div>
+                    <h3>Intelligent Chat</h3>
+                    <p>Converse naturally with AI assistants that understand context and can execute complex research tasks.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3>Advanced Search</h3>
+                    <p>Search across multiple sources with intelligent filtering, ranking, and result synthesis.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Analytics Dashboard</h3>
+                    <p>Track research progress, analyze patterns, and gain insights from your research activities.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Secure & Private</h3>
+                    <p>Local-first architecture ensures your research data stays private and secure.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="demo" class="demo">
+        <div class="container">
+            <div class="section-header">
+                <h2>See It In Action</h2>
+                <p>Experience the power of Router Phase 1 through interactive demonstrations.</p>
+            </div>
+            <div class="demo-grid">
+                <div class="demo-item">
+                    <h3>🚀 Quick Start</h3>
+                    <p>Get up and running in minutes with our guided setup process.</p>
+                    <a href="/register" class="btn btn-primary">Try Now</a>
+                </div>
+                <div class="demo-item">
+                    <h3>📖 Documentation</h3>
+                    <p>Comprehensive guides and API documentation for advanced usage.</p>
+                    <a href="/help" class="btn btn-secondary">Learn More</a>
+                </div>
+                <div class="demo-item">
+                    <h3>🎯 Use Cases</h3>
+                    <p>Explore real-world applications and success stories.</p>
+                    <a href="#features" class="btn btn-secondary">Explore</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>Router Phase 1</h4>
+                    <p>AI-powered research assistant for the modern researcher.</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Product</h4>
+                    <a href="#features">Features</a>
+                    <a href="/help">Documentation</a>
+                    <a href="/admin">Admin</a>
+                </div>
+                <div class="footer-section">
+                    <h4>Support</h4>
+                    <a href="/help">Help Center</a>
+                    <a href="#demo">Demo</a>
+                    <a href="/settings">Settings</a>
+                </div>
+                <div class="footer-section">
+                    <h4>Legal</h4>
+                    <a href="#">Privacy</a>
+                    <a href="#">Terms</a>
+                    <a href="#">Security</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 Router Phase 1. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/js/modern.js"></script>
+</body>
+</html>"""
+    return html
+
+def modern_auth_page(mode: str):
+    """Modern authentication page with animations"""
+    title = "Login" if mode == "login" else "Register"
+    action = "/api/auth/login" if mode == "login" else "/api/auth/register"
+    switch_text = "Don't have an account?" if mode == "login" else "Already have an account?"
+    switch_link = "/register" if mode == "login" else "/login"
+    switch_action = "Register" if mode == "login" else "Login"
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title} - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="auth-page">
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>Welcome to Router Phase 1</h1>
+                <p>Your AI-powered research companion</p>
+            </div>
+
+            <form class="auth-form" id="authForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full">
+                    {title}
+                </button>
+            </form>
+
+            <div class="auth-divider">
+                <span>or</span>
+            </div>
+
+            <div class="social-auth">
+                <button class="btn btn-social btn-google">
+                    <span class="social-icon">G</span>
+                    Continue with Google
+                </button>
+                <button class="btn btn-social btn-github">
+                    <span class="social-icon">GH</span>
+                    Continue with GitHub
+                </button>
+            </div>
+
+            <div class="auth-footer">
+                <p>{switch_text} <a href="{switch_link}">{switch_action}</a></p>
+            </div>
+        </div>
+
+        <div class="auth-features">
+            <div class="feature-item">
+                <div class="feature-icon">🚀</div>
+                <h3>Quick Setup</h3>
+                <p>Get started in under 5 minutes</p>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">🔒</div>
+                <h3>Secure</h3>
+                <p>Your data stays local and private</p>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">🤖</div>
+                <h3>AI-Powered</h3>
+                <p>Advanced AI agents for research</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('authForm').addEventListener('submit', async (e) => {{
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {{
+                const response = await fetch('{action}', {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(data)
+                }});
+
+                const result = await response.json();
+
+                if (response.ok) {{
+                    localStorage.setItem('accessToken', result.access_token);
+                    window.location.href = '/dashboard';
+                }} else {{
+                    alert(result.detail || 'Authentication failed');
+                }}
+            }} catch (error) {{
+                alert('Network error: ' + error.message);
+            }}
+        }});
+    </script>
+</body>
+</html>"""
+    return html
+
+def modern_dashboard_page():
+    """Comprehensive dashboard with stats and activity"""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dashboard-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Router Phase 1</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/dashboard">
+                        <span class="nav-icon">📊</span>
+                        Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/chat">
+                        <span class="nav-icon">💬</span>
+                        Chat
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/research">
+                        <span class="nav-icon">🔬</span>
+                        Research
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/knowledge">
+                        <span class="nav-icon">📚</span>
+                        Knowledge
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/settings">
+                        <span class="nav-icon">⚙️</span>
+                        Settings
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Dashboard</h1>
+                <div class="header-actions">
+                    <button class="btn btn-primary" id="newChatBtn">
+                        <span class="btn-icon">+</span>
+                        New Chat
+                    </button>
+                    <button class="btn btn-secondary" id="newResearchBtn">
+                        <span class="btn-icon">🔬</span>
+                        New Research
+                    </button>
+                </div>
+            </header>
+
+            <div class="dashboard-grid">
+                <div class="dashboard-card stats-card">
+                    <h3>Quick Stats</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="chatCount">0</div>
+                            <div class="stat-label">Total Chats</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="researchCount">0</div>
+                            <div class="stat-label">Research Sessions</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="knowledgeCount">0</div>
+                            <div class="stat-label">Knowledge Items</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="tokenCount">0</div>
+                            <div class="stat-label">Tokens Used</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-card recent-activity">
+                    <h3>Recent Activity</h3>
+                    <div class="activity-list" id="recentActivity">
+                        <div class="activity-item loading">
+                            <div class="activity-icon">⏳</div>
+                            <div class="activity-content">
+                                <div class="activity-title">Loading activity...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-card quick-actions">
+                    <h3>Quick Actions</h3>
+                    <div class="action-buttons">
+                        <button class="action-btn" onclick="startChat()">
+                            <span class="action-icon">💬</span>
+                            <span class="action-text">Start Chat</span>
+                        </button>
+                        <button class="action-btn" onclick="startResearch()">
+                            <span class="action-icon">🔬</span>
+                            <span class="action-text">Begin Research</span>
+                        </button>
+                        <button class="action-btn" onclick="addKnowledge()">
+                            <span class="action-icon">📚</span>
+                            <span class="action-text">Add Knowledge</span>
+                        </button>
+                        <button class="action-btn" onclick="viewSettings()">
+                            <span class="action-icon">⚙️</span>
+                            <span class="action-text">Settings</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="dashboard-card active-research">
+                    <h3>Active Research</h3>
+                    <div class="research-list" id="activeResearch">
+                        <div class="no-research">
+                            <span class="no-research-icon">🔬</span>
+                            <p>No active research sessions</p>
+                            <button class="btn btn-primary btn-sm" onclick="startResearch()">Start Research</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Dashboard functionality
+        document.addEventListener('DOMContentLoaded', function() {{
+            loadDashboardData();
+            setupEventListeners();
+        }});
+
+        function setupEventListeners() {{
+            document.getElementById('newChatBtn').addEventListener('click', startChat);
+            document.getElementById('newResearchBtn').addEventListener('click', startResearch);
+        }}
+
+        async function loadDashboardData() {{
+            const token = localStorage.getItem('accessToken');
+            if (!token) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            try {{
+                // Load stats
+                const statsResponse = await fetch('/api/dashboard/stats', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+                if (statsResponse.ok) {{
+                    const stats = await statsResponse.json();
+                    updateStats(stats);
+                }}
+
+                // Load recent activity
+                const activityResponse = await fetch('/api/dashboard/activity', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+                if (activityResponse.ok) {{
+                    const activity = await activityResponse.json();
+                    updateActivity(activity);
+                }}
+
+                // Load active research
+                const researchResponse = await fetch('/api/research/sessions', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+                if (researchResponse.ok) {{
+                    const research = await researchResponse.json();
+                    updateActiveResearch(research.sessions || []);
+                }}
+
+            }} catch (error) {{
+                console.error('Failed to load dashboard data:', error);
+            }}
+        }}
+
+        function updateStats(stats) {{
+            document.getElementById('chatCount').textContent = stats.chats || 0;
+            document.getElementById('researchCount').textContent = stats.research || 0;
+            document.getElementById('knowledgeCount').textContent = stats.knowledge || 0;
+            document.getElementById('tokenCount').textContent = stats.tokens || 0;
+        }}
+
+        function updateActivity(activities) {{
+            const container = document.getElementById('recentActivity');
+            container.innerHTML = '';
+
+            if (activities.length === 0) {{
+                container.innerHTML = '<div class="no-activity">No recent activity</div>';
+                return;
+            }}
+
+            activities.forEach(activity => {{
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                item.innerHTML = `
+                    <div class="activity-icon">${{getActivityIcon(activity.type)}}</div>
+                    <div class="activity-content">
+                        <div class="activity-title">${{activity.title}}</div>
+                        <div class="activity-time">${{formatTime(activity.timestamp)}}</div>
+                    </div>
+                `;
+                container.appendChild(item);
+            }});
+        }}
+
+        function updateActiveResearch(sessions) {{
+            const container = document.getElementById('activeResearch');
+            const activeSessions = sessions.filter(s => s.status === 'running' || s.status === 'in_progress');
+
+            if (activeSessions.length === 0) return;
+
+            container.innerHTML = '';
+            activeSessions.forEach(session => {{
+                const item = document.createElement('div');
+                item.className = 'research-item';
+                item.innerHTML = `
+                    <div class="research-title">${{session.query}}</div>
+                    <div class="research-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${{session.progress || 0}}%"></div>
+                        </div>
+                        <span class="progress-text">${{session.status}}</span>
+                    </div>
+                `;
+                container.appendChild(item);
+            }});
+        }}
+
+        function getActivityIcon(type) {{
+            const icons = {{
+                'chat': '💬',
+                'research': '🔬',
+                'knowledge': '📚',
+                'settings': '⚙️'
+            }};
+            return icons[type] || '📝';
+        }}
+
+        function formatTime(timestamp) {{
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            const minutes = Math.floor(diff / 60000);
+
+            if (minutes < 1) return 'Just now';
+            if (minutes < 60) return `${{minutes}}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${{hours}}h ago`;
+            return date.toLocaleDateString();
+        }}
+
+        function startChat() {{
+            window.location.href = '/chat';
+        }}
+
+        function startResearch() {{
+            window.location.href = '/research';
+        }}
+
+        function addKnowledge() {{
+            window.location.href = '/knowledge';
+        }}
+
+        function viewSettings() {{
+            window.location.href = '/settings';
+        }}
+    </script>
+</body>
+</html>"""
+    return html
+
+def modern_chat_page(chat_id: str = None):
+    """Advanced chat interface with modern features"""
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chat - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="chat-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-toggle" id="sidebarToggle">☰</div>
+                <h2>Chats</h2>
+                <button class="btn btn-primary btn-sm" id="newChatBtn">+ New</button>
+            </div>
+            <div class="chat-list" id="chatList">
+                <div class="chat-list-loading">Loading chats...</div>
+            </div>
+        </nav>
+
+        <main class="main-content">
+            <div class="chat-header">
+                <div class="chat-title">
+                    <h1 id="currentChatTitle">Select a chat or start new</h1>
+                </div>
+                <div class="chat-actions">
+                    <button class="btn btn-secondary" id="shareChatBtn">📤 Share</button>
+                    <button class="btn btn-secondary" id="exportChatBtn">💾 Export</button>
+                    <button class="btn btn-secondary" id="deleteChatBtn">🗑️ Delete</button>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="messagesContainer">
+                <div class="welcome-message">
+                    <div class="welcome-content">
+                        <h2>Welcome to Router Phase 1 Chat</h2>
+                        <p>Start a conversation with our AI assistant. Ask questions, request research, or explore knowledge.</p>
+                        <div class="quick-prompts">
+                            <button class="prompt-btn" onclick="sendQuickPrompt('Hello! Can you help me with research?')">🤝 Get Started</button>
+                            <button class="prompt-btn" onclick="sendQuickPrompt('What can you help me with today?')">❓ What can you do?</button>
+                            <button class="prompt-btn" onclick="sendQuickPrompt('Show me some examples of your capabilities')">💡 Show Examples</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <div class="input-container">
+                    <textarea
+                        id="messageInput"
+                        placeholder="Type your message... (Shift+Enter for new line)"
+                        rows="1"
+                        maxlength="10000"
+                    ></textarea>
+                    <div class="input-actions">
+                        <button class="btn btn-secondary" id="attachBtn" title="Attach file">
+                            📎
+                        </button>
+                        <button class="btn btn-primary" id="sendBtn">
+                            <span class="send-icon">➤</span>
+                            Send
+                        </button>
+                    </div>
+                </div>
+                <div class="input-footer">
+                    <span class="char-count" id="charCount">0/10000</span>
+                    <div class="typing-indicator" id="typingIndicator" style="display: none;">
+                        <span class="typing-dot"></span>
+                        <span class="typing-dot"></span>
+                        <span class="typing-dot"></span>
+                        <span>AI is typing...</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Message Actions Modal -->
+    <div class="modal" id="messageModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Message Options</h3>
+                <button class="modal-close" onclick="closeMessageModal()">×</button>
+            </div>
+            <div class="modal-body" id="messageModalBody">
+                <!-- Message content will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentChatId = {f"'{chat_id}'" if chat_id else 'null'};
+        let accessToken = localStorage.getItem('accessToken');
+        let messageHistory = [];
+
+        document.addEventListener('DOMContentLoaded', function() {{
+            if (!accessToken) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            initializeChat();
+            setupEventListeners();
+            loadChats();
+        }});
+
+        function initializeChat() {{
+            if (currentChatId) {{
+                loadChat(currentChatId);
+            }}
+        }}
+
+        function setupEventListeners() {{
+            // Message input
+            const messageInput = document.getElementById('messageInput');
+            messageInput.addEventListener('input', updateCharCount);
+            messageInput.addEventListener('keydown', handleKeyDown);
+
+            // Send button
+            document.getElementById('sendBtn').addEventListener('click', sendMessage);
+
+            // Chat management
+            document.getElementById('newChatBtn').addEventListener('click', createNewChat);
+            document.getElementById('shareChatBtn').addEventListener('click', shareChat);
+            document.getElementById('exportChatBtn').addEventListener('click', exportChat);
+            document.getElementById('deleteChatBtn').addEventListener('click', deleteChat);
+
+            // Sidebar
+            document.getElementById('sidebarToggle').addEventListener('click', toggleSidebar);
+
+            // Attach file
+            document.getElementById('attachBtn').addEventListener('click', attachFile);
+        }}
+
+        function updateCharCount() {{
+            const input = document.getElementById('messageInput');
+            const count = document.getElementById('charCount');
+            count.textContent = `${{input.value.length}}/10000`;
+        }}
+
+        function handleKeyDown(e) {{
+            if (e.key === 'Enter' && !e.shiftKey) {{
+                e.preventDefault();
+                sendMessage();
+            }}
+        }}
+
+        async function loadChats() {{
+            try {{
+                const response = await fetch('/api/chats', {{
+                    headers: {{ 'Authorization': `Bearer ${{accessToken}}` }}
+                }});
+
+                if (response.ok) {{
+                    const chats = await response.json();
+                    renderChatList(chats);
+                }}
+            }} catch (error) {{
+                console.error('Failed to load chats:', error);
+            }}
+        }}
+
+        function renderChatList(chats) {{
+            const container = document.getElementById('chatList');
+            container.innerHTML = '';
+
+            if (chats.length === 0) {{
+                container.innerHTML = '<div class="no-chats">No chats yet. Create your first chat!</div>';
+                return;
+            }}
+
+            chats.forEach(chat => {{
+                const chatItem = document.createElement('div');
+                chatItem.className = `chat-item ${{currentChatId === chat.id ? 'active' : ''}}`;
+                chatItem.onclick = () => selectChat(chat.id);
+
+                chatItem.innerHTML = `
+                    <div class="chat-item-title">${{chat.title || 'Untitled Chat'}}</div>
+                    <div class="chat-item-meta">
+                        <span class="chat-item-date">${{formatChatDate(chat.created_at)}}</span>
+                        <span class="chat-item-count">${{chat.message_count || 0}} messages</span>
+                    </div>
+                `;
+
+                container.appendChild(chatItem);
+            }});
+        }}
+
+        function formatChatDate(dateString) {{
+            const date = new Date(dateString);
+            const now = new Date();
+            const diff = now - date;
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+            if (days === 0) return 'Today';
+            if (days === 1) return 'Yesterday';
+            if (days < 7) return `${{days}} days ago`;
+            return date.toLocaleDateString();
+        }}
+
+        async function selectChat(chatId) {{
+            currentChatId = chatId;
+            await loadChat(chatId);
+
+            // Update UI
+            document.querySelectorAll('.chat-item').forEach(item => {{
+                item.classList.remove('active');
+            }});
+            event.currentTarget.classList.add('active');
+        }}
+
+        async function loadChat(chatId) {{
+            try {{
+                const response = await fetch(`/api/chats/${{chatId}}`, {{
+                    headers: {{ 'Authorization': `Bearer ${{accessToken}}` }}
+                }});
+
+                if (response.ok) {{
+                    const chat = await response.json();
+                    renderMessages(chat.messages || []);
+                    updateChatTitle(chat.title || 'Untitled Chat');
+                    messageHistory = chat.messages || [];
+                }}
+            }} catch (error) {{
+                console.error('Failed to load chat:', error);
+            }}
+        }}
+
+        function renderMessages(messages) {{
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = '';
+
+            if (messages.length === 0) {{
+                container.innerHTML = `
+                    <div class="welcome-message">
+                        <div class="welcome-content">
+                            <h2>Welcome to Router Phase 1 Chat</h2>
+                            <p>Start a conversation with our AI assistant. Ask questions, request research, or explore knowledge.</p>
+                            <div class="quick-prompts">
+                                <button class="prompt-btn" onclick="sendQuickPrompt('Hello! Can you help me with research?')">🤝 Get Started</button>
+                                <button class="prompt-btn" onclick="sendQuickPrompt('What can you help me with today?')">❓ What can you do?</button>
+                                <button class="prompt-btn" onclick="sendQuickPrompt('Show me some examples of your capabilities')">💡 Show Examples</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }}
+
+            messages.forEach((message, index) => {{
+                const messageEl = createMessageElement(message, index);
+                container.appendChild(messageEl);
+            }});
+
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }}
+
+        function createMessageElement(message, index) {{
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${{message.role}}`;
+            messageDiv.dataset.messageId = index;
+
+            messageDiv.innerHTML = `
+                <div class="message-avatar">
+                    ${{message.role === 'user' ? '👤' : '🤖'}}
+                </div>
+                <div class="message-content">
+                    <div class="message-text">${{formatMessageText(message.content)}}</div>
+                    <div class="message-meta">
+                        <span class="message-time">${{formatMessageTime(message.timestamp)}}</span>
+                        ${{message.token_count ? `<span class="token-count">${{message.token_count}} tokens</span>` : ''}}
+                        <button class="message-actions-btn" onclick="showMessageActions(${index})">⋯</button>
+                    </div>
+                </div>
+            `;
+
+            return messageDiv;
+        }}
+
+        function formatMessageText(text) {{
+            // Basic markdown-like formatting
+            return text
+                .replace(/\\n/g, '<br>')
+                .replace(/```([\\s\\S]*?)```/g, '<pre><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\\*\\*([^\\*\\*]+)\\*\\*/g, '<strong>$1</strong>')
+                .replace(/\\*([^\\*]+)\\*/g, '<em>$1</em>');
+        }}
+
+        function formatMessageTime(timestamp) {{
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString([], {{hour: '2-digit', minute:'2-digit'}});
+        }}
+
+        async function sendMessage() {{
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // Create chat if none exists
+            if (!currentChatId) {{
+                await createNewChat();
+            }}
+
+            // Add user message to UI
+            const userMessage = {{
+                role: 'user',
+                content: message,
+                timestamp: new Date().toISOString()
+            }};
+
+            messageHistory.push(userMessage);
+            renderMessages(messageHistory);
+            input.value = '';
+
+            // Show typing indicator
+            showTypingIndicator();
+
+            try {{
+                const response = await fetch('/api/chat', {{
+                    method: 'POST',
+                    headers: {{
+                        'Authorization': `Bearer ${{accessToken}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify({{
+                        message: message,
+                        chat_id: currentChatId,
+                        history: messageHistory.slice(-10) // Last 10 messages for context
+                    }})
+                }});
+
+                hideTypingIndicator();
+
+                if (response.ok) {{
+                    const result = await response.json();
+
+                    const aiMessage = {{
+                        role: 'assistant',
+                        content: result.response,
+                        timestamp: new Date().toISOString(),
+                        token_count: result.token_count
+                    }};
+
+                    messageHistory.push(aiMessage);
+                    renderMessages(messageHistory);
+
+                    // Save to chat
+                    await saveMessageToChat(currentChatId, userMessage);
+                    await saveMessageToChat(currentChatId, aiMessage);
+
+                }} else {{
+                    const error = await response.json();
+                    alert('Error: ' + (error.error || 'Unknown error'));
+                }}
+
+            }} catch (error) {{
+                hideTypingIndicator();
+                alert('Network error: ' + error.message);
+            }}
+        }}
+
+        function showTypingIndicator() {{
+            document.getElementById('typingIndicator').style.display = 'flex';
+        }}
+
+        function hideTypingIndicator() {{
+            document.getElementById('typingIndicator').style.display = 'none';
+        }}
+
+        async function createNewChat() {{
+            try {{
+                const response = await fetch('/api/chats', {{
+                    method: 'POST',
+                    headers: {{ 'Authorization': `Bearer ${{accessToken}}` }}
+                }});
+
+                if (response.ok) {{
+                    const chat = await response.json();
+                    currentChatId = chat.id;
+                    messageHistory = [];
+                    renderMessages([]);
+                    updateChatTitle('New Chat');
+                    loadChats();
+                }}
+            }} catch (error) {{
+                console.error('Failed to create chat:', error);
+            }}
+        }}
+
+        async function saveMessageToChat(chatId, message) {{
+            try {{
+                await fetch(`/api/chats/${{chatId}}/messages`, {{
+                    method: 'POST',
+                    headers: {{
+                        'Authorization': `Bearer ${{accessToken}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(message)
+                }});
+            }} catch (error) {{
+                console.error('Failed to save message:', error);
+            }}
+        }}
+
+        function updateChatTitle(title) {{
+            document.getElementById('currentChatTitle').textContent = title;
+        }}
+
+        function sendQuickPrompt(prompt) {{
+            document.getElementById('messageInput').value = prompt;
+            sendMessage();
+        }}
+
+        function showMessageActions(messageIndex) {{
+            const message = messageHistory[messageIndex];
+            const modal = document.getElementById('messageModal');
+            const body = document.getElementById('messageModalBody');
+
+            body.innerHTML = `
+                <div class="message-actions">
+                    <button onclick="copyMessage(${messageIndex})">📋 Copy</button>
+                    <button onclick="regenerateMessage(${messageIndex})">🔄 Regenerate</button>
+                    <button onclick="editMessage(${messageIndex})">✏️ Edit</button>
+                    <button onclick="deleteMessage(${messageIndex})" class="danger">🗑️ Delete</button>
+                </div>
+                <div class="message-preview">
+                    <strong>${{message.role === 'user' ? 'You' : 'Assistant'}}:</strong>
+                    <p>${{message.content.substring(0, 200)}}${message.content.length > 200 ? '...' : ''}</p>
+                </div>
+            `;
+
+            modal.style.display = 'flex';
+        }}
+
+        function closeMessageModal() {{
+            document.getElementById('messageModal').style.display = 'none';
+        }}
+
+        function copyMessage(index) {{
+            const message = messageHistory[index];
+            navigator.clipboard.writeText(message.content);
+            closeMessageModal();
+        }}
+
+        function toggleSidebar() {{
+            document.querySelector('.sidebar').classList.toggle('collapsed');
+        }}
+
+        function attachFile() {{
+            // Placeholder for file attachment
+            alert('File attachment coming soon!');
+        }}
+
+        // Placeholder functions
+        function shareChat() {{ alert('Share functionality coming soon!'); }}
+        function exportChat() {{ alert('Export functionality coming soon!'); }}
+        function deleteChat() {{ alert('Delete functionality coming soon!'); }}
+        function regenerateMessage(index) {{ alert('Regenerate functionality coming soon!'); }}
+        function editMessage(index) {{ alert('Edit functionality coming soon!'); }}
+        function deleteMessage(index) {{ alert('Delete functionality coming soon!'); }}
+    </script>
+</body>
+</html>"""
+    return html
+
+def modern_research_page():
+    """Advanced research studio with visual workflow"""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Research Studio - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="research-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Research Studio</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/research">
+                        <span class="nav-icon">🔬</span>
+                        Active Research
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/research/history">
+                        <span class="nav-icon">📚</span>
+                        Research History
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/research/templates">
+                        <span class="nav-icon">📋</span>
+                        Templates
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Research Studio</h1>
+                <div class="header-actions">
+                    <button class="btn btn-primary" id="newResearchBtn">
+                        <span class="btn-icon">+</span>
+                        New Research
+                    </button>
+                    <button class="btn btn-secondary" id="importResearchBtn">
+                        <span class="btn-icon">📥</span>
+                        Import
+                    </button>
+                </div>
+            </header>
+
+            <div class="research-workspace">
+                <div class="research-setup" id="researchSetup">
+                    <div class="setup-card">
+                        <h3>Start New Research</h3>
+                        <form id="researchForm">
+                            <div class="form-group">
+                                <label for="researchTopic">Research Topic</label>
+                                <input type="text" id="researchTopic" placeholder="e.g., 'Impact of AI on healthcare'" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="researchDepth">Research Depth</label>
+                                <select id="researchDepth">
+                                    <option value="quick">Quick Overview (5-10 min)</option>
+                                    <option value="standard" selected>Standard Research (15-30 min)</option>
+                                    <option value="deep">Deep Analysis (1-2 hours)</option>
+                                    <option value="comprehensive">Comprehensive Study (4+ hours)</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="researchScope">Scope & Focus</label>
+                                <textarea id="researchScope" rows="3" placeholder="Describe what aspects to focus on, specific questions to answer, or constraints..."></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Research Agents</label>
+                                <div class="agent-selection">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" checked id="useWebAgent"> Web Research Agent
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" checked id="useKnowledgeAgent"> Knowledge Base Agent
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="useAnalysisAgent"> Analysis & Synthesis Agent
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="useCritiqueAgent"> Critical Review Agent
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="timeLimit">Time Limit</label>
+                                <select id="timeLimit">
+                                    <option value="300">5 minutes</option>
+                                    <option value="900" selected>15 minutes</option>
+                                    <option value="1800">30 minutes</option>
+                                    <option value="3600">1 hour</option>
+                                    <option value="7200">2 hours</option>
+                                    <option value="unlimited">No limit</option>
+                                </select>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    <span class="btn-icon">🚀</span>
+                                    Start Research
+                                </button>
+                                <button type="button" class="btn btn-secondary" id="saveTemplateBtn">
+                                    Save as Template
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="research-progress" id="researchProgress" style="display: none;">
+                    <div class="progress-header">
+                        <h3 id="progressTitle">Research in Progress</h3>
+                        <div class="progress-actions">
+                            <button class="btn btn-secondary btn-sm" id="pauseResearchBtn">⏸️ Pause</button>
+                            <button class="btn btn-danger btn-sm" id="stopResearchBtn">⏹️ Stop</button>
+                        </div>
+                    </div>
+
+                    <div class="progress-visualization">
+                        <div class="main-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="mainProgressFill" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-text">
+                                <span id="mainProgressText">Initializing...</span>
+                                <span id="mainProgressPercent">0%</span>
+                            </div>
+                        </div>
+
+                        <div class="agent-progress" id="agentProgress">
+                            <div class="agent-status">
+                                <div class="agent-icon">🔍</div>
+                                <div class="agent-info">
+                                    <div class="agent-name">Web Research Agent</div>
+                                    <div class="agent-task">Searching sources...</div>
+                                </div>
+                                <div class="agent-progress-bar">
+                                    <div class="progress-fill" style="width: 45%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="research-timeline" id="researchTimeline">
+                        <h4>Research Timeline</h4>
+                        <div class="timeline">
+                            <div class="timeline-item completed">
+                                <div class="timeline-marker">✓</div>
+                                <div class="timeline-content">
+                                    <div class="timeline-title">Initialization</div>
+                                    <div class="timeline-time">2 seconds ago</div>
+                                </div>
+                            </div>
+                            <div class="timeline-item active">
+                                <div class="timeline-marker">🔄</div>
+                                <div class="timeline-content">
+                                    <div class="timeline-title">Web Research</div>
+                                    <div class="timeline-time">In progress...</div>
+                                </div>
+                            </div>
+                            <div class="timeline-item pending">
+                                <div class="timeline-marker">⏳</div>
+                                <div class="timeline-content">
+                                    <div class="timeline-title">Knowledge Synthesis</div>
+                                    <div class="timeline-time">Pending</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="research-results" id="researchResults" style="display: none;">
+                    <div class="results-header">
+                        <h3>Research Results</h3>
+                        <div class="results-actions">
+                            <button class="btn btn-primary" id="exportResultsBtn">📤 Export</button>
+                            <button class="btn btn-secondary" id="saveToKnowledgeBtn">📚 Save to Knowledge</button>
+                            <button class="btn btn-secondary" id="newResearchFromResultsBtn">🔄 New Research</button>
+                        </div>
+                    </div>
+
+                    <div class="results-content">
+                        <div class="results-summary">
+                            <h4>Executive Summary</h4>
+                            <div id="executiveSummary"></div>
+                        </div>
+
+                        <div class="results-sections">
+                            <div class="results-section">
+                                <h4>Key Findings</h4>
+                                <div id="keyFindings"></div>
+                            </div>
+
+                            <div class="results-section">
+                                <h4>Sources & References</h4>
+                                <div id="sourcesList"></div>
+                            </div>
+
+                            <div class="results-section">
+                                <h4>Detailed Analysis</h4>
+                                <div id="detailedAnalysis"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Research Templates Modal -->
+    <div class="modal" id="templatesModal" style="display: none;">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Research Templates</h3>
+                <button class="modal-close" onclick="closeTemplatesModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="templates-grid">
+                    <div class="template-card" onclick="loadTemplate('literature-review')">
+                        <div class="template-icon">📖</div>
+                        <h4>Literature Review</h4>
+                        <p>Comprehensive review of existing research and publications</p>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('market-analysis')">
+                        <div class="template-icon">📊</div>
+                        <h4>Market Analysis</h4>
+                        <p>Analyze market trends, competition, and opportunities</p>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('technical-feasibility')">
+                        <div class="template-icon">⚙️</div>
+                        <h4>Technical Feasibility</h4>
+                        <p>Assess technical requirements and implementation options</p>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('comparative-study')">
+                        <div class="template-icon">⚖️</div>
+                        <h4>Comparative Study</h4>
+                        <p>Compare different approaches, products, or methodologies</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentResearchTaskId = null;
+        let researchProgressInterval = null;
+
+        document.addEventListener('DOMContentLoaded', function() {{
+            const token = localStorage.getItem('accessToken');
+            if (!token) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            initializeResearch();
+            setupEventListeners();
+        }});
+
+        function initializeResearch() {{
+            loadResearchSessions();
+        }}
+
+        function setupEventListeners() {{
+            document.getElementById('researchForm').addEventListener('submit', startResearch);
+            document.getElementById('newResearchBtn').addEventListener('click', showResearchSetup);
+            document.getElementById('pauseResearchBtn').addEventListener('click', pauseResearch);
+            document.getElementById('stopResearchBtn').addEventListener('click', stopResearch);
+            document.getElementById('saveTemplateBtn').addEventListener('click', saveAsTemplate);
+            document.getElementById('exportResultsBtn').addEventListener('click', exportResults);
+            document.getElementById('saveToKnowledgeBtn').addEventListener('click', saveToKnowledge);
+            document.getElementById('newResearchFromResultsBtn').addEventListener('click', newResearchFromResults);
+        }}
+
+        async function loadResearchSessions() {{
+            const token = localStorage.getItem('accessToken');
+            try {{
+                const response = await fetch('/api/research/sessions', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (response.ok) {{
+                    const data = await response.json();
+                    const activeSession = data.sessions.find(s => s.status === 'running' || s.status === 'in_progress');
+
+                    if (activeSession) {{
+                        currentResearchTaskId = activeSession.id;
+                        showResearchProgress(activeSession);
+                        startProgressMonitoring();
+                    }}
+                }}
+            }} catch (error) {{
+                console.error('Failed to load research sessions:', error);
+            }}
+        }}
+
+        async function startResearch(e) {{
+            e.preventDefault();
+
+            const token = localStorage.getItem('accessToken');
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            // Get selected agents
+            data.agents = [];
+            if (document.getElementById('useWebAgent').checked) data.agents.push('web');
+            if (document.getElementById('useKnowledgeAgent').checked) data.agents.push('knowledge');
+            if (document.getElementById('useAnalysisAgent').checked) data.agents.push('analysis');
+            if (document.getElementById('useCritiqueAgent').checked) data.agents.push('critique');
+
+            try {{
+                const response = await fetch('/api/research/start', {{
+                    method: 'POST',
+                    headers: {{
+                        'Authorization': `Bearer ${{token}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(data)
+                }});
+
+                if (response.ok) {{
+                    const result = await response.json();
+                    currentResearchTaskId = result.task_id;
+                    showResearchProgress(result);
+                    startProgressMonitoring();
+                }} else {{
+                    const error = await response.json();
+                    alert('Research start failed: ' + (error.error || 'Unknown error'));
+                }}
+            }} catch (error) {{
+                alert('Failed to start research: ' + error.message);
+            }}
+        }}
+
+        function showResearchProgress(session) {{
+            document.getElementById('researchSetup').style.display = 'none';
+            document.getElementById('researchProgress').style.display = 'block';
+            document.getElementById('progressTitle').textContent = `Research: ${{session.query}}`;
+
+            updateProgressDisplay(session);
+        }}
+
+        function updateProgressDisplay(session) {{
+            const progressFill = document.getElementById('mainProgressFill');
+            const progressText = document.getElementById('mainProgressText');
+            const progressPercent = document.getElementById('mainProgressPercent');
+
+            const progress = session.progress || 0;
+            progressFill.style.width = `${{progress}}%`;
+            progressPercent.textContent = `${{progress}}%`;
+            progressText.textContent = session.status || 'Running...';
+        }}
+
+        function startProgressMonitoring() {{
+            if (researchProgressInterval) clearInterval(researchProgressInterval);
+
+            researchProgressInterval = setInterval(async () => {{
+                if (!currentResearchTaskId) return;
+
+                const token = localStorage.getItem('accessToken');
+                try {{
+                    const response = await fetch(`/api/research/${{currentResearchTaskId}}/status`, {{
+                        headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                    }});
+
+                    if (response.ok) {{
+                        const status = await response.json();
+                        updateProgressDisplay(status);
+
+                        if (status.status === 'completed' || status.status === 'failed') {{
+                            clearInterval(researchProgressInterval);
+                            showResearchResults(status);
+                        }}
+                    }}
+                }} catch (error) {{
+                    console.error('Failed to get research status:', error);
+                }}
+            }}, 2000);
+        }}
+
+        function showResearchResults(results) {{
+            document.getElementById('researchProgress').style.display = 'none';
+            document.getElementById('researchResults').style.display = 'block';
+
+            // Populate results (placeholder for actual implementation)
+            document.getElementById('executiveSummary').innerHTML = results.summary || 'Research completed successfully.';
+            document.getElementById('keyFindings').innerHTML = results.findings || 'Key findings will be displayed here.';
+            document.getElementById('sourcesList').innerHTML = results.sources || 'Sources will be listed here.';
+            document.getElementById('detailedAnalysis').innerHTML = results.analysis || 'Detailed analysis will be shown here.';
+        }}
+
+        function showResearchSetup() {{
+            document.getElementById('researchProgress').style.display = 'none';
+            document.getElementById('researchResults').style.display = 'none';
+            document.getElementById('researchSetup').style.display = 'block';
+            document.getElementById('researchTopic').value = '';
+        }}
+
+        // Placeholder functions
+        function pauseResearch() {{ alert('Pause functionality coming soon!'); }}
+        function stopResearch() {{ alert('Stop functionality implemented via API'); }}
+        function saveAsTemplate() {{ alert('Template saving coming soon!'); }}
+        function exportResults() {{ alert('Export functionality coming soon!'); }}
+        function saveToKnowledge() {{ alert('Knowledge saving coming soon!'); }}
+        function newResearchFromResults() {{ showResearchSetup(); }}
+        function closeTemplatesModal() {{ document.getElementById('templatesModal').style.display = 'none'; }}
+        function loadTemplate(template) {{ alert(`Loading template: ${{template}}`); }}
+    </script>
+</body>
+</html>"""
+    return html
+
+def modern_knowledge_page():
+    """Knowledge management interface with visual graph"""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Knowledge Base - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="knowledge-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Knowledge Base</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/knowledge">
+                        <span class="nav-icon">📚</span>
+                        Knowledge
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/knowledge/graph">
+                        <span class="nav-icon">🔗</span>
+                        Knowledge Graph
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/knowledge/search">
+                        <span class="nav-icon">🔍</span>
+                        Advanced Search
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Knowledge Base</h1>
+                <div class="header-actions">
+                    <button class="btn btn-primary" id="addKnowledgeBtn">
+                        <span class="btn-icon">+</span>
+                        Add Knowledge
+                    </button>
+                    <button class="btn btn-secondary" id="importKnowledgeBtn">
+                        <span class="btn-icon">📥</span>
+                        Import
+                    </button>
+                    <button class="btn btn-secondary" id="exportKnowledgeBtn">
+                        <span class="btn-icon">📤</span>
+                        Export
+                    </button>
+                </div>
+            </header>
+
+            <div class="knowledge-toolbar">
+                <div class="search-container">
+                    <input type="text" id="knowledgeSearch" placeholder="Search knowledge base..." class="search-input">
+                    <button class="btn btn-secondary" id="advancedSearchBtn">🔍 Advanced</button>
+                </div>
+                <div class="filter-controls">
+                    <select id="categoryFilter">
+                        <option value="">All Categories</option>
+                        <option value="research">Research</option>
+                        <option value="documentation">Documentation</option>
+                        <option value="notes">Notes</option>
+                        <option value="articles">Articles</option>
+                    </select>
+                    <select id="sortBy">
+                        <option value="relevance">Relevance</option>
+                        <option value="date">Date Added</option>
+                        <option value="title">Title</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="knowledge-content">
+                <div class="knowledge-grid" id="knowledgeGrid">
+                    <!-- Knowledge items will be loaded here -->
+                    <div class="knowledge-item loading">
+                        <div class="item-header">
+                            <div class="item-title">Loading knowledge base...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Knowledge Modal -->
+    <div class="modal" id="addKnowledgeModal" style="display: none;">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Add Knowledge</h3>
+                <button class="modal-close" onclick="closeAddKnowledgeModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="addKnowledgeForm">
+                    <div class="form-group">
+                        <label for="knowledgeTitle">Title</label>
+                        <input type="text" id="knowledgeTitle" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="knowledgeCategory">Category</label>
+                        <select id="knowledgeCategory">
+                            <option value="research">Research</option>
+                            <option value="documentation">Documentation</option>
+                            <option value="notes">Notes</option>
+                            <option value="articles">Articles</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="knowledgeSource">Source</label>
+                        <input type="text" id="knowledgeSource" placeholder="URL, file path, or reference">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="knowledgeContent">Content</label>
+                        <textarea id="knowledgeContent" rows="10" placeholder="Enter the knowledge content..." required></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="knowledgeTags">Tags (comma-separated)</label>
+                        <input type="text" id="knowledgeTags" placeholder="e.g., AI, research, healthcare">
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Add Knowledge</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeAddKnowledgeModal()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Knowledge Item Detail Modal -->
+    <div class="modal" id="knowledgeDetailModal" style="display: none;">
+        <div class="modal-content modal-xl">
+            <div class="modal-header">
+                <h3 id="detailTitle">Knowledge Item</h3>
+                <button class="modal-close" onclick="closeKnowledgeDetailModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="knowledge-detail">
+                    <div class="detail-meta">
+                        <span class="detail-category" id="detailCategory"></span>
+                        <span class="detail-date" id="detailDate"></span>
+                        <span class="detail-source" id="detailSource"></span>
+                    </div>
+                    <div class="detail-tags" id="detailTags"></div>
+                    <div class="detail-content" id="detailContent"></div>
+                </div>
+                <div class="detail-actions">
+                    <button class="btn btn-secondary" onclick="editKnowledge()">✏️ Edit</button>
+                    <button class="btn btn-secondary" onclick="duplicateKnowledge()">📋 Duplicate</button>
+                    <button class="btn btn-danger" onclick="deleteKnowledge()">🗑️ Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allKnowledge = [];
+        let filteredKnowledge = [];
+
+        document.addEventListener('DOMContentLoaded', function() {{
+            const token = localStorage.getItem('accessToken');
+            if (!token) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            initializeKnowledge();
+            setupEventListeners();
+        }});
+
+        function initializeKnowledge() {{
+            loadKnowledge();
+        }}
+
+        function setupEventListeners() {{
+            document.getElementById('addKnowledgeBtn').addEventListener('click', showAddKnowledgeModal);
+            document.getElementById('knowledgeSearch').addEventListener('input', filterKnowledge);
+            document.getElementById('categoryFilter').addEventListener('change', filterKnowledge);
+            document.getElementById('sortBy').addEventListener('change', sortKnowledge);
+            document.getElementById('addKnowledgeForm').addEventListener('submit', addKnowledge);
+            document.getElementById('advancedSearchBtn').addEventListener('click', showAdvancedSearch);
+        }}
+
+        async function loadKnowledge() {{
+            const token = localStorage.getItem('accessToken');
+            try {{
+                const response = await fetch('/api/rag/knowledge', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (response.ok) {{
+                    allKnowledge = await response.json();
+                    filteredKnowledge = [...allKnowledge];
+                    renderKnowledgeGrid(filteredKnowledge);
+                }}
+            }} catch (error) {{
+                console.error('Failed to load knowledge:', error);
+                document.getElementById('knowledgeGrid').innerHTML = '<div class="no-knowledge">Failed to load knowledge base</div>';
+            }}
+        }}
+
+        function renderKnowledgeGrid(knowledge) {{
+            const grid = document.getElementById('knowledgeGrid');
+
+            if (knowledge.length === 0) {{
+                grid.innerHTML = '<div class="no-knowledge">No knowledge items found. <button class="btn btn-primary btn-sm" onclick="showAddKnowledgeModal()">Add your first item</button></div>';
+                return;
+            }}
+
+            grid.innerHTML = '';
+
+            knowledge.forEach(item => {{
+                const itemEl = document.createElement('div');
+                itemEl.className = 'knowledge-item';
+                itemEl.onclick = () => showKnowledgeDetail(item);
+
+                itemEl.innerHTML = `
+                    <div class="item-header">
+                        <div class="item-title">${{item.title || 'Untitled'}}</div>
+                        <div class="item-category">${{item.category || 'uncategorized'}}</div>
+                    </div>
+                    <div class="item-preview">${{item.content ? item.content.substring(0, 150) + '...' : 'No content'}}</div>
+                    <div class="item-meta">
+                        <span class="item-date">${{formatDate(item.created_at)}}</span>
+                        ${{item.tags ? `<span class="item-tags">${{item.tags.join(', ')}}</span>` : ''}}
+                    </div>
+                `;
+
+                grid.appendChild(itemEl);
+            }});
+        }}
+
+        function filterKnowledge() {{
+            const searchTerm = document.getElementById('knowledgeSearch').value.toLowerCase();
+            const categoryFilter = document.getElementById('categoryFilter').value;
+
+            filteredKnowledge = allKnowledge.filter(item => {{
+                const matchesSearch = !searchTerm ||
+                    (item.title && item.title.toLowerCase().includes(searchTerm)) ||
+                    (item.content && item.content.toLowerCase().includes(searchTerm)) ||
+                    (item.tags && item.tags.some(tag => tag.toLowerCase().includes(searchTerm)));
+
+                const matchesCategory = !categoryFilter || item.category === categoryFilter;
+
+                return matchesSearch && matchesCategory;
+            }});
+
+            sortKnowledge();
+            renderKnowledgeGrid(filteredKnowledge);
+        }}
+
+        function sortKnowledge() {{
+            const sortBy = document.getElementById('sortBy').value;
+
+            filteredKnowledge.sort((a, b) => {{
+                switch (sortBy) {{
+                    case 'date':
+                        return new Date(b.created_at) - new Date(a.created_at);
+                    case 'title':
+                        return (a.title || '').localeCompare(b.title || '');
+                    case 'relevance':
+                    default:
+                        return 0; // Keep current order for relevance
+                }}
+            }});
+
+            renderKnowledgeGrid(filteredKnowledge);
+        }}
+
+        function formatDate(dateString) {{
+            if (!dateString) return 'Unknown date';
+            const date = new Date(dateString);
+            return date.toLocaleDateString();
+        }}
+
+        function showAddKnowledgeModal() {{
+            document.getElementById('addKnowledgeModal').style.display = 'flex';
+        }}
+
+        function closeAddKnowledgeModal() {{
+            document.getElementById('addKnowledgeModal').style.display = 'none';
+            document.getElementById('addKnowledgeForm').reset();
+        }}
+
+        async function addKnowledge(e) {{
+            e.preventDefault();
+
+            const token = localStorage.getItem('accessToken');
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            // Parse tags
+            if (data.knowledgeTags) {{
+                data.tags = data.knowledgeTags.split(',').map(tag => tag.trim()).filter(tag => tag);
+                delete data.knowledgeTags;
+            }}
+
+            try {{
+                const response = await fetch('/api/rag/knowledge', {{
+                    method: 'POST',
+                    headers: {{
+                        'Authorization': `Bearer ${{token}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(data)
+                }});
+
+                if (response.ok) {{
+                    closeAddKnowledgeModal();
+                    loadKnowledge();
+                }} else {{
+                    alert('Failed to add knowledge');
+                }}
+            }} catch (error) {{
+                alert('Error adding knowledge: ' + error.message);
+            }}
+        }}
+
+        function showKnowledgeDetail(item) {{
+            const modal = document.getElementById('knowledgeDetailModal');
+            document.getElementById('detailTitle').textContent = item.title || 'Untitled';
+            document.getElementById('detailCategory').textContent = item.category || 'uncategorized';
+            document.getElementById('detailDate').textContent = formatDate(item.created_at);
+            document.getElementById('detailSource').textContent = item.source || 'Unknown source';
+            document.getElementById('detailTags').innerHTML = item.tags ? item.tags.map(tag => `<span class="tag">${{tag}}</span>`).join('') : '';
+            document.getElementById('detailContent').innerHTML = formatKnowledgeContent(item.content);
+
+            modal.style.display = 'flex';
+        }}
+
+        function formatKnowledgeContent(content) {{
+            if (!content) return 'No content available';
+
+            return content
+                .replace(/\\n/g, '<br>')
+                .replace(/```([\\s\\S]*?)```/g, '<pre><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\\*\\*([^\\*\\*]+)\\*\\*/g, '<strong>$1</strong>')
+                .replace(/\\*([^\\*]+)\\*/g, '<em>$1</em>');
+        }}
+
+        function closeKnowledgeDetailModal() {{
+            document.getElementById('knowledgeDetailModal').style.display = 'none';
+        }}
+
+        // Placeholder functions
+        function showAdvancedSearch() {{ alert('Advanced search coming soon!'); }}
+        function editKnowledge() {{ alert('Edit functionality coming soon!'); }}
+        function duplicateKnowledge() {{ alert('Duplicate functionality coming soon!'); }}
+        function deleteKnowledge() {{ alert('Delete functionality coming soon!'); }}
+    </script>
+</body>
+</html>"""
+    return html
+
+def modern_settings_page():
+    """Settings hub with comprehensive options"""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Settings - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="settings-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Settings</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/settings">
+                        <span class="nav-icon">🎨</span>
+                        Appearance
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/settings/account">
+                        <span class="nav-icon">👤</span>
+                        Account
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/settings/research">
+                        <span class="nav-icon">🔬</span>
+                        Research
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/settings/privacy">
+                        <span class="nav-icon">🔒</span>
+                        Privacy & Security
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/settings/integrations">
+                        <span class="nav-icon">🔗</span>
+                        Integrations
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/settings/advanced">
+                        <span class="nav-icon">⚙️</span>
+                        Advanced
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Settings</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="resetSettingsBtn">
+                        <span class="btn-icon">🔄</span>
+                        Reset to Defaults
+                    </button>
+                    <button class="btn btn-primary" id="saveSettingsBtn">
+                        <span class="btn-icon">💾</span>
+                        Save Changes
+                    </button>
+                </div>
+            </header>
+
+            <div class="settings-content">
+                <div class="settings-section">
+                    <h3>🎨 Appearance</h3>
+                    <div class="setting-group">
+                        <div class="setting-item">
+                            <label for="themeSelect">Theme</label>
+                            <select id="themeSelect">
+                                <option value="light">Light</option>
+                                <option value="dark" selected>Dark</option>
+                                <option value="auto">Auto (System)</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-item">
+                            <label for="accentColor">Accent Color</label>
+                            <input type="color" id="accentColor" value="#007bff">
+                        </div>
+
+                        <div class="setting-item">
+                            <label for="fontSize">Font Size</label>
+                            <select id="fontSize">
+                                <option value="small">Small</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="large">Large</option>
+                                <option value="xl">Extra Large</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-item">
+                            <label for="language">Language</label>
+                            <select id="language">
+                                <option value="en" selected>English</option>
+                                <option value="es">Español</option>
+                                <option value="fr">Français</option>
+                                <option value="de">Deutsch</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>💬 Chat Settings</h3>
+                    <div class="setting-group">
+                        <div class="setting-item">
+                            <label for="defaultModel">Default AI Model</label>
+                            <select id="defaultModel">
+                                <option value="llama3.2:latest" selected>Llama 3.2 (Latest)</option>
+                                <option value="llama3.1:8b">Llama 3.1 8B</option>
+                                <option value="gpt-4">GPT-4 (Cloud)</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-item">
+                            <label for="temperature">Response Creativity</label>
+                            <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+                            <span id="temperatureValue">0.7</span>
+                        </div>
+
+                        <div class="setting-item">
+                            <label for="maxTokens">Maximum Response Length</label>
+                            <select id="maxTokens">
+                                <option value="500">Short (500 tokens)</option>
+                                <option value="1000" selected>Medium (1000 tokens)</option>
+                                <option value="2000">Long (2000 tokens)</option>
+                                <option value="unlimited">Unlimited</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-item checkbox">
+                            <input type="checkbox" id="autoSave" checked>
+                            <label for="autoSave">Auto-save conversations</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>🔬 Research Settings</h3>
+                    <div class="setting-group">
+                        <div class="setting-item">
+                            <label for="defaultDepth">Default Research Depth</label>
+                            <select id="defaultDepth">
+                                <option value="quick">Quick</option>
+                                <option value="standard" selected>Standard</option>
+                                <option value="deep">Deep</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-item">
+                            <label for="timeLimit">Default Time Limit</label>
+                            <select id="timeLimit">
+                                <option value="900">15 minutes</option>
+                                <option value="1800" selected>30 minutes</option>
+                                <option value="3600">1 hour</option>
+                                <option value="unlimited">No limit</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-item checkbox">
+                            <input type="checkbox" id="autoExport" checked>
+                            <label for="autoExport">Auto-export research results</label>
+                        </div>
+
+                        <div class="setting-item checkbox">
+                            <input type="checkbox" id="saveToKnowledge" checked>
+                            <label for="saveToKnowledge">Auto-save findings to knowledge base</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>🔒 Privacy & Security</h3>
+                    <div class="setting-group">
+                        <div class="setting-item checkbox">
+                            <input type="checkbox" id="localOnly" checked>
+                            <label for="localOnly">Local processing only (no cloud)</label>
+                        </div>
+
+                        <div class="setting-item checkbox">
+                            <input type="checkbox" id="encryptData" checked>
+                            <label for="encryptData">Encrypt stored data</label>
+                        </div>
+
+                        <div class="setting-item">
+                            <label for="dataRetention">Data Retention</label>
+                            <select id="dataRetention">
+                                <option value="forever">Forever</option>
+                                <option value="1year" selected>1 Year</option>
+                                <option value="6months">6 Months</option>
+                                <option value="1month">1 Month</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-item">
+                            <button class="btn btn-danger btn-sm" id="clearDataBtn">Clear All Data</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>🔗 Integrations</h3>
+                    <div class="setting-group">
+                        <div class="integration-item">
+                            <div class="integration-info">
+                                <div class="integration-name">Ollama</div>
+                                <div class="integration-desc">Local AI model server</div>
+                            </div>
+                            <div class="integration-status connected">Connected</div>
+                        </div>
+
+                        <div class="integration-item">
+                            <div class="integration-info">
+                                <div class="integration-name">GitHub</div>
+                                <div class="integration-desc">Code repository access</div>
+                            </div>
+                            <button class="btn btn-secondary btn-sm">Connect</button>
+                        </div>
+
+                        <div class="integration-item">
+                            <div class="integration-info">
+                                <div class="integration-name">Kiwix</div>
+                                <div class="integration-desc">Offline knowledge base</div>
+                            </div>
+                            <div class="integration-status disconnected">Not Connected</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Preview Modal -->
+    <div class="modal" id="settingsPreviewModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Settings Preview</h3>
+                <button class="modal-close" onclick="closeSettingsPreview()">×</button>
+            </div>
+            <div class="modal-body">
+                <p>Your settings will be applied immediately. Here's a preview:</p>
+                <div class="preview-content" id="settingsPreview">
+                    <!-- Preview will be shown here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSettingsPreview()">Cancel</button>
+                <button class="btn btn-primary" onclick="applySettings()">Apply Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const token = localStorage.getItem('accessToken');
+            if (!token) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            initializeSettings();
+            setupEventListeners();
+        }});
+
+        function initializeSettings() {{
+            loadCurrentSettings();
+            setupRangeInputs();
+        }}
+
+        function setupEventListeners() {{
+            document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+            document.getElementById('resetSettingsBtn').addEventListener('click', resetSettings);
+            document.getElementById('clearDataBtn').addEventListener('click', clearData);
+            document.getElementById('temperature').addEventListener('input', updateTemperatureValue);
+        }}
+
+        function setupRangeInputs() {{
+            const temperature = document.getElementById('temperature');
+            const temperatureValue = document.getElementById('temperatureValue');
+
+            temperature.addEventListener('input', function() {{
+                temperatureValue.textContent = this.value;
+            }});
+        }}
+
+        async function loadCurrentSettings() {{
+            const token = localStorage.getItem('accessToken');
+            try {{
+                const response = await fetch('/api/config', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (response.ok) {{
+                    const settings = await response.json();
+
+                    // Apply current settings to form
+                    if (settings.theme) document.getElementById('themeSelect').value = settings.theme;
+                    if (settings.accentColor) document.getElementById('accentColor').value = settings.accentColor;
+                    if (settings.fontSize) document.getElementById('fontSize').value = settings.fontSize;
+                    if (settings.language) document.getElementById('language').value = settings.language;
+                    if (settings.defaultModel) document.getElementById('defaultModel').value = settings.defaultModel;
+                    if (settings.temperature) {{
+                        document.getElementById('temperature').value = settings.temperature;
+                        document.getElementById('temperatureValue').textContent = settings.temperature;
+                    }}
+                    if (settings.maxTokens) document.getElementById('maxTokens').value = settings.maxTokens;
+                    if (settings.autoSave !== undefined) document.getElementById('autoSave').checked = settings.autoSave;
+                    if (settings.defaultDepth) document.getElementById('defaultDepth').value = settings.defaultDepth;
+                    if (settings.timeLimit) document.getElementById('timeLimit').value = settings.timeLimit;
+                    if (settings.autoExport !== undefined) document.getElementById('autoExport').checked = settings.autoExport;
+                    if (settings.saveToKnowledge !== undefined) document.getElementById('saveToKnowledge').checked = settings.saveToKnowledge;
+                    if (settings.localOnly !== undefined) document.getElementById('localOnly').checked = settings.localOnly;
+                    if (settings.encryptData !== undefined) document.getElementById('encryptData').checked = settings.encryptData;
+                    if (settings.dataRetention) document.getElementById('dataRetention').value = settings.dataRetention;
+                }}
+            }} catch (error) {{
+                console.error('Failed to load settings:', error);
+            }}
+        }}
+
+        async function saveSettings() {{
+            const token = localStorage.getItem('accessToken');
+
+            const settings = {{
+                theme: document.getElementById('themeSelect').value,
+                accentColor: document.getElementById('accentColor').value,
+                fontSize: document.getElementById('fontSize').value,
+                language: document.getElementById('language').value,
+                defaultModel: document.getElementById('defaultModel').value,
+                temperature: parseFloat(document.getElementById('temperature').value),
+                maxTokens: document.getElementById('maxTokens').value,
+                autoSave: document.getElementById('autoSave').checked,
+                defaultDepth: document.getElementById('defaultDepth').value,
+                timeLimit: document.getElementById('timeLimit').value,
+                autoExport: document.getElementById('autoExport').checked,
+                saveToKnowledge: document.getElementById('saveToKnowledge').checked,
+                localOnly: document.getElementById('localOnly').checked,
+                encryptData: document.getElementById('encryptData').checked,
+                dataRetention: document.getElementById('dataRetention').value
+            }};
+
+            try {{
+                const response = await fetch('/api/config', {{
+                    method: 'POST',
+                    headers: {{
+                        'Authorization': `Bearer ${{token}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(settings)
+                }});
+
+                if (response.ok) {{
+                    alert('Settings saved successfully!');
+                    // Apply theme changes immediately
+                    applyTheme(settings.theme);
+                }} else {{
+                    alert('Failed to save settings');
+                }}
+            }} catch (error) {{
+                alert('Error saving settings: ' + error.message);
+            }}
+        }}
+
+        function applyTheme(theme) {{
+            const body = document.body;
+            body.classList.remove('light-theme', 'dark-theme');
+
+            if (theme === 'light') {{
+                body.classList.add('light-theme');
+            }} else if (theme === 'dark') {{
+                body.classList.add('dark-theme');
+            }}
+            // Auto theme would need system preference detection
+        }}
+
+        function resetSettings() {{
+            if (confirm('Are you sure you want to reset all settings to defaults?')) {{
+                // Reset form to defaults
+                document.getElementById('themeSelect').value = 'dark';
+                document.getElementById('accentColor').value = '#007bff';
+                document.getElementById('fontSize').value = 'medium';
+                document.getElementById('language').value = 'en';
+                document.getElementById('defaultModel').value = 'llama3.2:latest';
+                document.getElementById('temperature').value = '0.7';
+                document.getElementById('temperatureValue').textContent = '0.7';
+                document.getElementById('maxTokens').value = '1000';
+                document.getElementById('autoSave').checked = true;
+                document.getElementById('defaultDepth').value = 'standard';
+                document.getElementById('timeLimit').value = '1800';
+                document.getElementById('autoExport').checked = true;
+                document.getElementById('saveToKnowledge').checked = true;
+                document.getElementById('localOnly').checked = true;
+                document.getElementById('encryptData').checked = true;
+                document.getElementById('dataRetention').value = '1year';
+            }}
+        }}
+
+        function updateTemperatureValue() {{
+            const temperature = document.getElementById('temperature');
+            const temperatureValue = document.getElementById('temperatureValue');
+            temperatureValue.textContent = temperature.value;
+        }}
+
+        // Placeholder functions
+        function clearData() {{ alert('Data clearing functionality coming soon!'); }}
+        function closeSettingsPreview() {{ document.getElementById('settingsPreviewModal').style.display = 'none'; }}
+        function applySettings() {{ closeSettingsPreview(); }}
+    </script>
+</body>
+</html>"""
+    return html
+
+def modern_profile_page():
+    """User profile page with activity and customization"""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Profile - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="profile-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Profile</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/profile">
+                        <span class="nav-icon">👤</span>
+                        Overview
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/profile/activity">
+                        <span class="nav-icon">📊</span>
+                        Activity
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/profile/achievements">
+                        <span class="nav-icon">🏆</span>
+                        Achievements
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/profile/preferences">
+                        <span class="nav-icon">⚙️</span>
+                        Preferences
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>My Profile</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="editProfileBtn">
+                        <span class="btn-icon">✏️</span>
+                        Edit Profile
+                    </button>
+                </div>
+            </header>
+
+            <div class="profile-content">
+                <div class="profile-header">
+                    <div class="profile-avatar">
+                        <div class="avatar-placeholder" id="profileAvatar">
+                            👤
+                        </div>
+                        <button class="avatar-edit-btn" id="changeAvatarBtn">📷</button>
+                    </div>
+                    <div class="profile-info">
+                        <h2 id="profileName">Loading...</h2>
+                        <p id="profileEmail">user@example.com</p>
+                        <div class="profile-meta">
+                            <span class="meta-item">Member since <span id="memberSince">Unknown</span></span>
+                            <span class="meta-item">Last active <span id="lastActive">Recently</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="profile-stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalChats">0</div>
+                        <div class="stat-label">Total Chats</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalResearch">0</div>
+                        <div class="stat-label">Research Sessions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="knowledgeItems">0</div>
+                        <div class="stat-label">Knowledge Items</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="achievements">0</div>
+                        <div class="stat-label">Achievements</div>
+                    </div>
+                </div>
+
+                <div class="profile-section">
+                    <h3>Recent Activity</h3>
+                    <div class="activity-feed" id="recentActivity">
+                        <div class="activity-item loading">
+                            <div class="activity-icon">⏳</div>
+                            <div class="activity-content">
+                                <div class="activity-title">Loading activity...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="profile-section">
+                    <h3>Research Interests</h3>
+                    <div class="interests-grid" id="researchInterests">
+                        <div class="interest-tag">AI & Machine Learning</div>
+                        <div class="interest-tag">Data Science</div>
+                        <div class="interest-tag">Software Engineering</div>
+                        <div class="interest-tag">Research Methodology</div>
+                        <button class="btn btn-secondary btn-sm" id="editInterestsBtn">Edit Interests</button>
+                    </div>
+                </div>
+
+                <div class="profile-section">
+                    <h3>Account Settings</h3>
+                    <div class="account-settings">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <div class="setting-name">Password</div>
+                                <div class="setting-desc">Last changed 30 days ago</div>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" id="changePasswordBtn">Change</button>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <div class="setting-name">Two-Factor Authentication</div>
+                                <div class="setting-desc">Add an extra layer of security</div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" id="enable2FABtn">Enable</button>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <div class="setting-name">Data Export</div>
+                                <div class="setting-desc">Download all your data</div>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" id="exportDataBtn">Export</button>
+                        </div>
+                        <div class="setting-row danger">
+                            <div class="setting-info">
+                                <div class="setting-name">Delete Account</div>
+                                <div class="setting-desc">Permanently delete your account and all data</div>
+                            </div>
+                            <button class="btn btn-danger btn-sm" id="deleteAccountBtn">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const token = localStorage.getItem('accessToken');
+            if (!token) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            initializeProfile();
+            setupEventListeners();
+        }});
+
+        function initializeProfile() {{
+            loadProfileData();
+        }}
+
+        function setupEventListeners() {{
+            document.getElementById('editProfileBtn').addEventListener('click', editProfile);
+            document.getElementById('changeAvatarBtn').addEventListener('click', changeAvatar);
+            document.getElementById('editInterestsBtn').addEventListener('click', editInterests);
+            document.getElementById('changePasswordBtn').addEventListener('click', changePassword);
+            document.getElementById('enable2FABtn').addEventListener('click', enable2FA);
+            document.getElementById('exportDataBtn').addEventListener('click', exportData);
+            document.getElementById('deleteAccountBtn').addEventListener('click', deleteAccount);
+        }}
+
+        async function loadProfileData() {{
+            const token = localStorage.getItem('accessToken');
+            try {{
+                // Load user info
+                const userResponse = await fetch('/api/auth/me', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (userResponse.ok) {{
+                    const user = await userResponse.json();
+                    document.getElementById('profileName').textContent = user.username;
+                    document.getElementById('profileEmail').textContent = user.username + '@example.com'; // Placeholder
+                    document.getElementById('memberSince').textContent = 'January 2024'; // Placeholder
+                    document.getElementById('lastActive').textContent = 'Today'; // Placeholder
+                }}
+
+                // Load stats
+                const statsResponse = await fetch('/api/profile/stats', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (statsResponse.ok) {{
+                    const stats = await statsResponse.json();
+                    updateStats(stats);
+                }}
+
+                // Load recent activity
+                const activityResponse = await fetch('/api/profile/activity', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (activityResponse.ok) {{
+                    const activities = await activityResponse.json();
+                    updateActivity(activities);
+                }}
+
+            }} catch (error) {{
+                console.error('Failed to load profile data:', error);
+            }}
+        }}
+
+        function updateStats(stats) {{
+            document.getElementById('totalChats').textContent = stats.chats || 0;
+            document.getElementById('totalResearch').textContent = stats.research || 0;
+            document.getElementById('knowledgeItems').textContent = stats.knowledge || 0;
+            document.getElementById('achievements').textContent = stats.achievements || 0;
+        }}
+
+        function updateActivity(activities) {{
+            const container = document.getElementById('recentActivity');
+            container.innerHTML = '';
+
+            if (activities.length === 0) {{
+                container.innerHTML = '<div class="no-activity">No recent activity</div>';
+                return;
+            }}
+
+            activities.forEach(activity => {{
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                item.innerHTML = `
+                    <div class="activity-icon">${{getActivityIcon(activity.type)}}</div>
+                    <div class="activity-content">
+                        <div class="activity-title">${{activity.title}}</div>
+                        <div class="activity-time">${{formatTime(activity.timestamp)}}</div>
+                    </div>
+                `;
+                container.appendChild(item);
+            }});
+        }}
+
+        function getActivityIcon(type) {{
+            const icons = {{
+                'chat': '💬',
+                'research': '🔬',
+                'knowledge': '📚',
+                'achievement': '🏆'
+            }};
+            return icons[type] || '📝';
+        }}
+
+        function formatTime(timestamp) {{
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            const minutes = Math.floor(diff / 60000);
+
+            if (minutes < 1) return 'Just now';
+            if (minutes < 60) return `${{minutes}}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${{hours}}h ago`;
+            return date.toLocaleDateString();
+        }}
+
+        // Placeholder functions
+        function editProfile() {{ alert('Edit profile functionality coming soon!'); }}
+        function changeAvatar() {{ alert('Avatar change functionality coming soon!'); }}
+        function editInterests() {{ alert('Edit interests functionality coming soon!'); }}
+        function changePassword() {{ alert('Password change functionality coming soon!'); }}
+        function enable2FA() {{ alert('2FA setup functionality coming soon!'); }}
+        function exportData() {{ alert('Data export functionality coming soon!'); }}
+        function deleteAccount() {{ alert('Account deletion requires confirmation and comes with warnings!'); }}
+    </script>
+</body>
+</html>"""
+    return html
+
+def modern_help_page():
+    """Comprehensive help system with tutorials"""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Help & Documentation - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="help-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Help Center</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/help">
+                        <span class="nav-icon">❓</span>
+                        Getting Started
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/help/chat">
+                        <span class="nav-icon">💬</span>
+                        Using Chat
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/help/research">
+                        <span class="nav-icon">🔬</span>
+                        Research Features
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/help/knowledge">
+                        <span class="nav-icon">📚</span>
+                        Knowledge Base
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/help/api">
+                        <span class="nav-icon">🔧</span>
+                        API Reference
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/help/troubleshooting">
+                        <span class="nav-icon">🔧</span>
+                        Troubleshooting
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Help & Documentation</h1>
+                <div class="header-actions">
+                    <input type="text" id="helpSearch" placeholder="Search help..." class="search-input">
+                </div>
+            </header>
+
+            <div class="help-content">
+                <div class="help-welcome">
+                    <h2>Welcome to Router Phase 1 Help</h2>
+                    <p>Find answers to your questions and learn how to make the most of our AI research assistant.</p>
+                </div>
+
+                <div class="help-quick-start">
+                    <h3>🚀 Quick Start Guide</h3>
+                    <div class="quick-start-steps">
+                        <div class="step">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <h4>Create Your Account</h4>
+                                <p>Sign up for a free account to get started with Router Phase 1.</p>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <h4>Start Your First Chat</h4>
+                                <p>Begin a conversation with our AI assistant to explore capabilities.</p>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">3</div>
+                            <div class="step-content">
+                                <h4>Try Research Mode</h4>
+                                <p>Experience multi-agent research with comprehensive analysis.</p>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">4</div>
+                            <div class="step-content">
+                                <h4>Build Knowledge</h4>
+                                <p>Add your findings to the knowledge base for future reference.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="help-categories">
+                    <div class="help-category">
+                        <div class="category-icon">💬</div>
+                        <h3>Chat Features</h3>
+                        <p>Learn how to have effective conversations with AI assistants.</p>
+                        <ul>
+                            <li>Message formatting and markdown</li>
+                            <li>Managing conversation history</li>
+                            <li>Using different AI models</li>
+                            <li>Sharing and exporting chats</li>
+                        </ul>
+                        <a href="/help/chat" class="btn btn-secondary">Learn More</a>
+                    </div>
+
+                    <div class="help-category">
+                        <div class="category-icon">🔬</div>
+                        <h3>Research Tools</h3>
+                        <p>Master the advanced research capabilities.</p>
+                        <ul>
+                            <li>Multi-agent research orchestration</li>
+                            <li>Progress tracking and monitoring</li>
+                            <li>Result synthesis and analysis</li>
+                            <li>Research templates and workflows</li>
+                        </ul>
+                        <a href="/help/research" class="btn btn-secondary">Learn More</a>
+                    </div>
+
+                    <div class="help-category">
+                        <div class="category-icon">📚</div>
+                        <h3>Knowledge Management</h3>
+                        <p>Organize and leverage your research findings.</p>
+                        <ul>
+                            <li>Adding content to knowledge base</li>
+                            <li>Advanced search and filtering</li>
+                            <li>Knowledge graphs and relationships</li>
+                            <li>Import/export functionality</li>
+                        </ul>
+                        <a href="/help/knowledge" class="btn btn-secondary">Learn More</a>
+                    </div>
+
+                    <div class="help-category">
+                        <div class="category-icon">⚙️</div>
+                        <h3>Customization</h3>
+                        <p>Personalize your Router Phase 1 experience.</p>
+                        <ul>
+                            <li>Theme and appearance settings</li>
+                            <li>Research preferences</li>
+                            <li>Privacy and security options</li>
+                            <li>Integration setup</li>
+                        </ul>
+                        <a href="/settings" class="btn btn-secondary">Go to Settings</a>
+                    </div>
+                </div>
+
+                <div class="help-resources">
+                    <h3>📚 Additional Resources</h3>
+                    <div class="resource-grid">
+                        <div class="resource-item">
+                            <h4>🎥 Video Tutorials</h4>
+                            <p>Step-by-step video guides for key features.</p>
+                            <a href="#" class="btn btn-secondary btn-sm">Watch Videos</a>
+                        </div>
+                        <div class="resource-item">
+                            <h4>📖 User Guide</h4>
+                            <p>Comprehensive written documentation.</p>
+                            <a href="#" class="btn btn-secondary btn-sm">Read Guide</a>
+                        </div>
+                        <div class="resource-item">
+                            <h4>💬 Community Forum</h4>
+                            <p>Get help from other users and share tips.</p>
+                            <a href="#" class="btn btn-secondary btn-sm">Join Community</a>
+                        </div>
+                        <div class="resource-item">
+                            <h4>🔧 API Reference</h4>
+                            <p>Technical documentation for developers.</p>
+                            <a href="/help/api" class="btn btn-secondary btn-sm">View API Docs</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="help-contact">
+                    <h3>🆘 Need More Help?</h3>
+                    <p>Can't find what you're looking for? Our support team is here to help.</p>
+                    <div class="contact-options">
+                        <button class="btn btn-primary" onclick="contactSupport()">Contact Support</button>
+                        <button class="btn btn-secondary" onclick="reportBug()">Report Bug</button>
+                        <button class="btn btn-secondary" onclick="requestFeature()">Request Feature</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Interactive Tutorial Modal -->
+    <div class="modal" id="tutorialModal" style="display: none;">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3 id="tutorialTitle">Interactive Tutorial</h3>
+                <button class="modal-close" onclick="closeTutorial()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="tutorial-content" id="tutorialContent">
+                    <!-- Tutorial content will be loaded here -->
+                </div>
+                <div class="tutorial-navigation">
+                    <button class="btn btn-secondary" id="prevStepBtn" disabled>Previous</button>
+                    <span id="tutorialProgress">Step 1 of 5</span>
+                    <button class="btn btn-primary" id="nextStepBtn">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            setupHelpSearch();
+            setupTutorialSystem();
+        }});
+
+        function setupHelpSearch() {{
+            const searchInput = document.getElementById('helpSearch');
+            searchInput.addEventListener('input', function(e) {{
+                const query = e.target.value.toLowerCase();
+                // Implement search functionality
+                highlightSearchResults(query);
+            }});
+        }}
+
+        function highlightSearchResults(query) {{
+            if (!query) {{
+                // Clear highlights
+                return;
+            }}
+
+            // Simple text highlighting (could be enhanced with proper search)
+            const content = document.querySelector('.help-content');
+            const text = content.textContent;
+            const regex = new RegExp(`(${query})`, 'gi');
+            const highlighted = text.replace(regex, '<mark>$1</mark>');
+
+            // This is a simplified version - real implementation would be more sophisticated
+            console.log('Search query:', query);
+        }}
+
+        function setupTutorialSystem() {{
+            // Placeholder for interactive tutorial system
+            window.startTutorial = function(tutorialId) {{
+                document.getElementById('tutorialModal').style.display = 'flex';
+                loadTutorial(tutorialId);
+            }};
+        }}
+
+        function loadTutorial(tutorialId) {{
+            const tutorials = {{
+                'getting-started': {{
+                    title: 'Getting Started with Router Phase 1',
+                    steps: [
+                        {{
+                            title: 'Welcome',
+                            content: 'Welcome to Router Phase 1! This tutorial will help you get started with our AI research assistant.'
+                        }},
+                        {{
+                            title: 'Creating Your Account',
+                            content: 'First, create your account by clicking the "Register" button on the login page.'
+                        }},
+                        {{
+                            title: 'Your First Chat',
+                            content: 'Start by creating a new chat and asking the AI assistant a question.'
+                        }},
+                        {{
+                            title: 'Exploring Features',
+                            content: 'Take a look at the sidebar to explore Research, Knowledge, and Settings.'
+                        }},
+                        {{
+                            title: 'Next Steps',
+                            content: 'You\\'re all set! Continue exploring and learning about the features.'
+                        }}
+                    ]
+                }}
+            }};
+
+            const tutorial = tutorials[tutorialId];
+            if (!tutorial) return;
+
+            let currentStep = 0;
+            const content = document.getElementById('tutorialContent');
+            const title = document.getElementById('tutorialTitle');
+            const progress = document.getElementById('tutorialProgress');
+            const prevBtn = document.getElementById('prevStepBtn');
+            const nextBtn = document.getElementById('nextStepBtn');
+
+            title.textContent = tutorial.title;
+
+            function showStep(stepIndex) {{
+                const step = tutorial.steps[stepIndex];
+                content.innerHTML = `
+                    <h4>${{step.title}}</h4>
+                    <p>${{step.content}}</p>
+                `;
+                progress.textContent = `Step ${{stepIndex + 1}} of ${{tutorial.steps.length}}`;
+                prevBtn.disabled = stepIndex === 0;
+                nextBtn.textContent = stepIndex === tutorial.steps.length - 1 ? 'Finish' : 'Next';
+            }}
+
+            prevBtn.addEventListener('click', function() {{
+                if (currentStep > 0) {{
+                    currentStep--;
+                    showStep(currentStep);
+                }}
+            }});
+
+            nextBtn.addEventListener('click', function() {{
+                if (currentStep < tutorial.steps.length - 1) {{
+                    currentStep++;
+                    showStep(currentStep);
+                }} else {{
+                    closeTutorial();
+                }}
+            }});
+
+            showStep(0);
+        }}
+
+        function closeTutorial() {{
+            document.getElementById('tutorialModal').style.display = 'none';
+        }}
+
+        // Placeholder functions
+        function contactSupport() {{ alert('Support contact functionality coming soon!'); }}
+        function reportBug() {{ alert('Bug reporting functionality coming soon!'); }}
+        function requestFeature() {{ alert('Feature request functionality coming soon!'); }}
+    </script>
+</body>
+</html>"""
+    return html
+
+def modern_admin_page():
+    """Admin panel interface (placeholder for future admin features)"""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Panel - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="admin-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Admin Panel</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/admin">
+                        <span class="nav-icon">📊</span>
+                        Overview
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/admin/users">
+                        <span class="nav-icon">👥</span>
+                        Users
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/admin/system">
+                        <span class="nav-icon">⚙️</span>
+                        System
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/admin/logs">
+                        <span class="nav-icon">📝</span>
+                        Logs
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/admin/backups">
+                        <span class="nav-icon">💾</span>
+                        Backups
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Admin Dashboard</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="systemStatusBtn">
+                        <span class="btn-icon">🔍</span>
+                        System Status
+                    </button>
+                    <button class="btn btn-primary" id="maintenanceBtn">
+                        <span class="btn-icon">🔧</span>
+                        Run Maintenance
+                    </button>
+                </div>
+            </header>
+
+            <div class="admin-content">
+                <div class="admin-stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalUsers">0</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="activeUsers">0</div>
+                        <div class="stat-label">Active Users (24h)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalChats">0</div>
+                        <div class="stat-label">Total Chats</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="systemLoad">0%</div>
+                        <div class="stat-label">System Load</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="storageUsed">0GB</div>
+                        <div class="stat-label">Storage Used</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="uptime">0d</div>
+                        <div class="stat-label">System Uptime</div>
+                    </div>
+                </div>
+
+                <div class="admin-section">
+                    <h3>Recent Activity</h3>
+                    <div class="activity-log" id="activityLog">
+                        <div class="log-entry loading">
+                            <span class="log-time">Loading...</span>
+                            <span class="log-message">Loading recent activity...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="admin-section">
+                    <h3>System Health</h3>
+                    <div class="health-checks">
+                        <div class="health-item">
+                            <div class="health-name">Database</div>
+                            <div class="health-status healthy">✓ Healthy</div>
+                        </div>
+                        <div class="health-item">
+                            <div class="health-name">Ollama Service</div>
+                            <div class="health-status warning">⚠ Checking...</div>
+                        </div>
+                        <div class="health-item">
+                            <div class="health-name">File System</div>
+                            <div class="health-status healthy">✓ Healthy</div>
+                        </div>
+                        <div class="health-item">
+                            <div class="health-name">Memory Usage</div>
+                            <div class="health-status healthy">✓ 45% used</div>
+                        </div>
+                        <div class="health-item">
+                            <div class="health-name">Disk Space</div>
+                            <div class="health-status healthy">✓ 2.1GB free</div>
+                        </div>
+                        <div class="health-item">
+                            <div class="health-name">Network</div>
+                            <div class="health-status healthy">✓ Connected</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="admin-section">
+                    <h3>Quick Actions</h3>
+                    <div class="admin-actions">
+                        <button class="btn btn-secondary" onclick="backupDatabase()">
+                            <span class="btn-icon">💾</span>
+                            Backup Database
+                        </button>
+                        <button class="btn btn-secondary" onclick="clearCache()">
+                            <span class="btn-icon">🗑️</span>
+                            Clear Cache
+                        </button>
+                        <button class="btn btn-secondary" onclick="restartServices()">
+                            <span class="btn-icon">🔄</span>
+                            Restart Services
+                        </button>
+                        <button class="btn btn-warning" onclick="maintenanceMode()">
+                            <span class="btn-icon">⚠️</span>
+                            Maintenance Mode
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const token = localStorage.getItem('accessToken');
+            if (!token) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            // Check if user is admin (placeholder)
+            checkAdminAccess(token);
+            initializeAdminDashboard();
+            setupEventListeners();
+        }});
+
+        function checkAdminAccess(token) {{
+            // Placeholder - in real implementation, check user role
+            console.log('Admin access check would happen here');
+        }}
+
+        function initializeAdminDashboard() {{
+            loadAdminStats();
+            loadActivityLog();
+            setupHealthMonitoring();
+        }}
+
+        function setupEventListeners() {{
+            document.getElementById('systemStatusBtn').addEventListener('click', checkSystemStatus);
+            document.getElementById('maintenanceBtn').addEventListener('click', runMaintenance);
+        }}
+
+        async function loadAdminStats() {{
+            const token = localStorage.getItem('accessToken');
+            try {{
+                const response = await fetch('/api/admin/stats', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (response.ok) {{
+                    const stats = await response.json();
+                    updateAdminStats(stats);
+                }} else {{
+                    // Fallback to placeholder data
+                    updateAdminStats({{
+                        totalUsers: 1,
+                        activeUsers: 1,
+                        totalChats: 0,
+                        systemLoad: '25%',
+                        storageUsed: '0.5GB',
+                        uptime: '1d 2h'
+                    }});
+                }}
+            }} catch (error) {{
+                console.error('Failed to load admin stats:', error);
+                // Use placeholder data
+                updateAdminStats({{
+                    totalUsers: 1,
+                    activeUsers: 1,
+                    totalChats: 0,
+                    systemLoad: '25%',
+                    storageUsed: '0.5GB',
+                    uptime: '1d 2h'
+                }});
+            }}
+        }}
+
+        function updateAdminStats(stats) {{
+            document.getElementById('totalUsers').textContent = stats.totalUsers || 0;
+            document.getElementById('activeUsers').textContent = stats.activeUsers || 0;
+            document.getElementById('totalChats').textContent = stats.totalChats || 0;
+            document.getElementById('systemLoad').textContent = stats.systemLoad || '0%';
+            document.getElementById('storageUsed').textContent = stats.storageUsed || '0GB';
+            document.getElementById('uptime').textContent = stats.uptime || '0d';
+        }}
+
+        async function loadActivityLog() {{
+            const token = localStorage.getItem('accessToken');
+            try {{
+                const response = await fetch('/api/admin/activity', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (response.ok) {{
+                    const activities = await response.json();
+                    updateActivityLog(activities);
+                }} else {{
+                    // Placeholder activity
+                    updateActivityLog([
+                        {{
+                            timestamp: new Date().toISOString(),
+                            message: 'System started successfully',
+                            level: 'info'
+                        }},
+                        {{
+                            timestamp: new Date(Date.now() - 3600000).toISOString(),
+                            message: 'User authentication successful',
+                            level: 'info'
+                        }}
+                    ]);
+                }}
+            }} catch (error) {{
+                console.error('Failed to load activity log:', error);
+                updateActivityLog([{{timestamp: new Date().toISOString(), message: 'Activity log loading failed', level: 'error'}}]);
+            }}
+        }}
+
+        function updateActivityLog(activities) {{
+            const logContainer = document.getElementById('activityLog');
+            logContainer.innerHTML = '';
+
+            activities.forEach(activity => {{
+                const entry = document.createElement('div');
+                entry.className = `log-entry ${{activity.level || 'info'}}`;
+                entry.innerHTML = `
+                    <span class="log-time">${{formatLogTime(activity.timestamp)}}</span>
+                    <span class="log-message">${{activity.message}}</span>
+                `;
+                logContainer.appendChild(entry);
+            }});
+        }}
+
+        function formatLogTime(timestamp) {{
+            const date = new Date(timestamp);
+            return date.toLocaleString();
+        }}
+
+        function setupHealthMonitoring() {{
+            // Periodic health checks
+            setInterval(() => {{
+                checkSystemHealth();
+            }}, 30000); // Check every 30 seconds
+        }}
+
+        async function checkSystemHealth() {{
+            try {{
+                const response = await fetch('/api/health');
+                const healthData = await response.json();
+
+                // Update health indicators based on response
+                updateHealthStatus('database', 'healthy');
+                updateHealthStatus('ollama', response.ok ? 'healthy' : 'error');
+            }} catch (error) {{
+                console.error('Health check failed:', error);
+            }}
+        }}
+
+        function updateHealthStatus(component, status) {{
+            const statusEl = document.querySelector(`.health-item:has(.health-name:contains("${{component}}")) .health-status`);
+            if (statusEl) {{
+                statusEl.className = `health-status ${{status}}`;
+                statusEl.textContent = status === 'healthy' ? '✓ Healthy' :
+                                     status === 'warning' ? '⚠ Warning' :
+                                     '✗ Error';
+            }}
+        }}
+
+        function checkSystemStatus() {{
+            alert('System status check functionality coming soon!\\n\\nThis would show detailed system information, service status, and performance metrics.');
+        }}
+
+        function runMaintenance() {{
+            if (confirm('Run system maintenance? This may temporarily affect performance.')) {{
+                alert('Maintenance functionality coming soon!\\n\\nThis would perform database optimization, cache clearing, and system cleanup.');
+            }}
+        }}
+
+        // Placeholder functions
+        function backupDatabase() {{ alert('Database backup functionality coming soon!'); }}
+        function clearCache() {{ alert('Cache clearing functionality coming soon!'); }}
+        function restartServices() {{ alert('Service restart functionality coming soon!'); }}
+        function maintenanceMode() {{ alert('Maintenance mode functionality coming soon!'); }}
+    </script>
+</body>
+</html>"""
+    return html
+
+def modern_home_page():
+    """Modern landing page with feature showcase - main entry point"""
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Router Phase 1 - AI-Powered Research Assistant</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="landing-page">
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h1>Router Phase 1</h1>
+                <span class="tagline">AI-Powered Research Assistant</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#demo" class="nav-link">Demo</a>
+                <a href="/login" class="btn btn-primary">Get Started</a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="hero-container">
+            <div class="hero-content">
+                <h1 class="hero-title">Intelligent Research<br>at Your Fingertips</h1>
+                <p class="hero-subtitle">Experience the future of AI-assisted research with multi-agent systems, knowledge graphs, and seamless collaboration.</p>
+                <div class="hero-actions">
+                    <a href="/register" class="btn btn-primary btn-lg">Start Free Trial</a>
+                    <a href="#demo" class="btn btn-secondary btn-lg">Watch Demo</a>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="mockup-container">
+                    <div class="mockup-screen">
+                        <div class="mockup-header">
+                            <div class="mockup-dots">
+                                <span class="dot red"></span>
+                                <span class="dot yellow"></span>
+                                <span class="dot green"></span>
+                            </div>
+                            <div class="mockup-title">Research Dashboard</div>
+                        </div>
+                        <div class="mockup-content">
+                            <div class="mockup-sidebar">
+                                <div class="mockup-nav-item active">📊 Dashboard</div>
+                                <div class="mockup-nav-item">💬 Chat</div>
+                                <div class="mockup-nav-item">🔬 Research</div>
+                                <div class="mockup-nav-item">📚 Knowledge</div>
+                            </div>
+                            <div class="mockup-main">
+                                <div class="mockup-card">
+                                    <h3>Active Research Sessions</h3>
+                                    <div class="mockup-progress">
+                                        <div class="progress-bar" style="width: 75%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-header">
+                <h2>Powerful Features for Modern Research</h2>
+                <p>Everything you need to conduct thorough, efficient research with AI assistance.</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3>Multi-Agent Research</h3>
+                    <p>Deploy specialized AI agents for different research tasks, from data collection to analysis and synthesis.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📚</div>
+                    <h3>Knowledge Graphs</h3>
+                    <p>Build and explore interconnected knowledge bases with visual graph representations and semantic search.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💬</div>
+                    <h3>Intelligent Chat</h3>
+                    <p>Converse naturally with AI assistants that understand context and can execute complex research tasks.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3>Advanced Search</h3>
+                    <p>Search across multiple sources with intelligent filtering, ranking, and result synthesis.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Analytics Dashboard</h3>
+                    <p>Track research progress, analyze patterns, and gain insights from your research activities.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Secure & Private</h3>
+                    <p>Local-first architecture ensures your research data stays private and secure.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="demo" class="demo">
+        <div class="container">
+            <div class="section-header">
+                <h2>See It In Action</h2>
+                <p>Experience the power of Router Phase 1 through interactive demonstrations.</p>
+            </div>
+            <div class="demo-grid">
+                <div class="demo-item">
+                    <h3>🚀 Quick Start</h3>
+                    <p>Get up and running in minutes with our guided setup process.</p>
+                    <a href="/register" class="btn btn-primary">Try Now</a>
+                </div>
+                <div class="demo-item">
+                    <h3>📖 Documentation</h3>
+                    <p>Comprehensive guides and API documentation for advanced usage.</p>
+                    <a href="/help" class="btn btn-secondary">Learn More</a>
+                </div>
+                <div class="demo-item">
+                    <h3>🎯 Use Cases</h3>
+                    <p>Explore real-world applications and success stories.</p>
+                    <a href="#features" class="btn btn-secondary">Explore</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>Router Phase 1</h4>
+                    <p>AI-powered research assistant for the modern researcher.</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Product</h4>
+                    <a href="#features">Features</a>
+                    <a href="/help">Documentation</a>
+                    <a href="/admin">Admin</a>
+                </div>
+                <div class="footer-section">
+                    <h4>Support</h4>
+                    <a href="/help">Help Center</a>
+                    <a href="#demo">Demo</a>
+                    <a href="/settings">Settings</a>
+                </div>
+                <div class="footer-section">
+                    <h4>Legal</h4>
+                    <a href="#">Privacy</a>
+                    <a href="#">Terms</a>
+                    <a href="#">Security</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 Router Phase 1. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/js/modern.js"></script>
+</body>
+</html>"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>""" + APP_TITLE + """</title>
+    <link rel="stylesheet" href="/static/css/""" + theme + """.css">
+    <style>
+        .settings-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: none; align-items: center; justify-content: center;
+        }
+        .settings-modal {
+            background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 14px; width: 90%; max-width: 600px; max-height: 80%; overflow-y: auto; padding: 20px; position: relative;
+        }
+        .settings-modal h2 { margin-top: 0; }
+        .settings-modal .close-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 20px; cursor: pointer; }
+        .settings-section { margin-bottom: 20px; }
+        .settings-section h3 { border-bottom: 1px solid var(--border-color); padding-bottom: 5px; }
+        .sidebar {
+            position: fixed; left: 0; top: 0; width: 300px; height: 100%; background: var(--card-bg); border-right: 1px solid var(--border-color); padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); transform: translateX(-100%); transition: transform 0.3s;
+        }
+        .sidebar.show { transform: translateX(0); }
+        .sidebar h3 { margin-top: 0; }
+        .sidebar .close-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 20px; cursor: pointer; }
+        .sidebar-content { padding: 20px; }
+        .sidebar-content h3 { margin-top: 0; }
+        .sidebar-content ul { list-style: none; padding: 0; }
+        .chat-item { padding: 8px; cursor: pointer; border-bottom: 1px solid var(--border-color); }
+        .chat-item:hover { background: var(--card-bg); }
+        .chat-item.active { background: var(--accent-color); color: white; }
+        #newChatBtn { width: 100%; margin-bottom: 10px; }
+        .msg { margin-bottom: 10px; padding: 10px; border-radius: 8px; }
+        .msg.user { background: var(--accent-color); color: white; margin-left: 20%; }
+        .msg.assistant { background: var(--card-bg); border: 1px solid var(--border-color); margin-right: 20%; }
+        .msg-meta { font-size: 0.8em; opacity: 0.7; margin-top: 5px; }
+        .view { display: none; }
+        .view.active { display: block; }
+        .nav-tabs { display: flex; margin-bottom: 10px; }
+        .tab { flex: 1; padding: 8px; border: none; background: var(--card-bg); border-bottom: 2px solid transparent; cursor: pointer; }
+        .tab.active { border-bottom-color: var(--accent-color); font-weight: bold; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+        .research-item { padding: 8px; cursor: pointer; border-bottom: 1px solid var(--border-color); }
+        .research-item:hover { background: var(--card-bg); }
+        .knowledge-item { padding: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 5px; }
+        #toggleSidebar { position: fixed; top: 20px; left: 20px; z-index: 1000; }
+        #settingsBtn { position: fixed; top: 20px; left: 70px; z-index: 1000; }
+        .auth-section { display: none; }
+        .auth-section.show { display: block; }
+        .chat-section { display: none; }
+        .chat-section.show { display: block; }
+    </style>
+</head>
+<body>
+    <div id="authSection" class="auth-section show">
+        <div class="wrap">
+            <div class="card">
+                <h2>Login to """ + APP_TITLE + """</h2>
+                <input type="text" id="username" placeholder="Username" style="width:100%; margin-bottom:10px;"><br>
+                <input type="password" id="password" placeholder="Password" style="width:100%; margin-bottom:10px;"><br>
+                <button class="btn" id="loginBtn">Login</button>
+                <button class="btn" id="registerBtn">Register</button>
+            </div>
+        </div>
+    </div>
+    <div id="chatSection" class="chat-section">
+        <button id="settingsBtn" class="btn">⚙️</button>
+        <button id="toggleSidebar" class="btn">☰</button>
+        <div class="settings-overlay" id="settingsOverlay">
+            <div class="settings-modal">
+                <button class="close-btn" id="closeSettings">×</button>
+                <h2>Settings</h2>
+            <div class="settings-section">
+                <h3>Appearance</h3>
+                <label><input type="radio" name="theme" value="light" """ + checked_light + """> Light Theme</label><br>
+                <label><input type="radio" name="theme" value="dark" """ + checked_dark + """> Dark Theme</label>
+                <br><label>Accent Color: <input type="color" id="accentColor" value="#007bff"></label>
+            </div>
+            <div class="settings-section">
+                <h3>Research Settings</h3>
+                <label>Time Limit (hours): <input type="number" id="timeLimit" min="1" max="720" value="24"></label><br>
+                <label>Default Model: <select id="defaultModel">
+                    <option value="llama3.2:latest">llama3.2:latest</option>
+                    <option value="llama3.1:8b">llama3.1:8b</option>
+                </select></label><br>
+                <label>Max Memory Usage (GB): <input type="number" id="maxMemory" min="1" max="15" step="0.1" value="12"></label>
+            </div>
+            <div class="settings-section">
+                <h3>Tool Permissions</h3>
+                <label><input type="checkbox" id="allowWebSearch" checked> Allow Web Search</label><br>
+                <label><input type="checkbox" id="allowFileAccess" checked> Allow File Access</label><br>
+                <label><input type="checkbox" id="allowSystemTools"> Allow System Tools</label>
+            </div>
+            </div>
+        </div>
+        <div class="sidebar" id="sidebar">
+            <button class="close-btn" id="closeSidebar">×</button>
+            <div class="sidebar-content">
+                <div class="nav-tabs">
+                    <button id="chatTab" class="tab active">Chat</button>
+                    <button id="researchTab" class="tab">Research</button>
+                    <button id="ragTab" class="tab">RAG</button>
+                </div>
+                <div id="chatPanel" class="panel active">
+                    <h3>Chats</h3>
+                    <input type="text" id="chatSearch" placeholder="Search chats..." style="width:100%; margin-bottom:10px;">
+                    <button id="newChatBtn">+ New Chat</button>
+                    <ul id="chatList"></ul>
+                </div>
+                <div id="researchPanel" class="panel">
+                    <h3>Research Sessions</h3>
+                    <ul id="researchList"></ul>
+                </div>
+                <div id="ragPanel" class="panel">
+                    <h3>RAG Management</h3>
+                    <button id="addKnowledgeBtn">+ Add Knowledge</button>
+                    <button id="maintenanceBtn">Run Maintenance</button>
+                    <div id="knowledgeList"></div>
+                </div>
+            </div>
+        </div>
+    <div id="chatView" class="view active">
+        <div class="wrap">
+            <div class="card">
+                <h2>Chat</h2>
+                <div id="msgs" class="msgs"></div>
+                <textarea id="prompt" placeholder="Type your message..." rows="3"></textarea>
+                <div style="margin-top:10px;">
+                    <button class="btn" id="shareBtnSidebar">📤 Share Conversation</button>
+                    <button class="btn" id="sendBtn">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="researchView" class="view">
+        <div class="wrap">
+            <div class="card">
+                <h2>Research Dashboard</h2>
+                <div id="researchControls">
+                    <input type="text" id="researchTopic" placeholder="Enter research topic..." style="width:70%;">
+                    <select id="researchDepth">
+                        <option value="quick">Quick</option>
+                        <option value="standard" selected>Standard</option>
+                        <option value="deep">Deep</option>
+                    </select>
+                    <button class="btn" id="startResearchBtn">Start Research</button>
+                </div>
+                <div id="researchProgress" style="margin-top:20px; display:none;">
+                    <div id="progressBar" style="width:100%; height:20px; background:#eee; border-radius:10px; overflow:hidden;">
+                        <div id="progressFill" style="height:100%; background:var(--accent-color); width:0%; transition:width 0.3s;"></div>
+                    </div>
+                    <div id="progressText" style="margin-top:5px;">Initializing...</div>
+                    <div id="agentStatus" style="margin-top:10px;"></div>
+                    <button class="btn" id="stopResearchBtn" style="margin-top:10px;">Stop Research</button>
+                </div>
+                <div id="researchResults" style="margin-top:20px; display:none;">
+                    <h3>Results</h3>
+                    <div id="resultsContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+    <script>
+        const authSection = document.getElementById('authSection');
+        const chatSection = document.getElementById('chatSection');
+        const usernameEl = document.getElementById('username');
+        const passwordEl = document.getElementById('password');
+        const loginBtn = document.getElementById('loginBtn');
+        const registerBtn = document.getElementById('registerBtn');
+        const promptEl = document.getElementById('prompt');
+        const msgsEl = document.getElementById('msgs');
+        const sendBtn = document.getElementById('sendBtn');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const settingsOverlay = document.getElementById('settingsOverlay');
+        const closeSettings = document.getElementById('closeSettings');
+        const toggleSidebar = document.getElementById('toggleSidebar');
+        const sidebar = document.getElementById('sidebar');
+        const closeSidebar = document.getElementById('closeSidebar');
+        const shareBtnSidebar = document.getElementById('shareBtnSidebar');
+
+        let accessToken = localStorage.getItem('accessToken');
+        let currentChatId = null;
+        let currentResearchTaskId = null;
+
+        function showChat() {
+            authSection.classList.remove('show');
+            chatSection.classList.add('show');
+        }
+
+        function showAuth() {
+            chatSection.classList.remove('show');
+            authSection.classList.add('show');
+        }
+
+        async function loadChats(search = '') {
+            try {
+                const url = search ? `http://localhost:8000/api/chats/search?q=${encodeURIComponent(search)}` : 'http://localhost:8000/api/chats';
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                const chats = await response.json();
+                renderChatList(chats);
+            } catch(e) {
+                console.error('Failed to load chats:', e);
+            }
+        }
+
+        function renderChatList(chats) {
+            const chatList = document.getElementById('chatList');
+            chatList.innerHTML = '';
+            chats.forEach(chat => {
+                const li = document.createElement('li');
+                li.className = 'chat-item';
+                li.dataset.chatId = chat.id;
+                li.textContent = chat.title;
+                li.onclick = () => loadChat(chat.id);
+                chatList.appendChild(li);
+            });
+        }
+
+        async function createNewChat() {
+            try {
+                const response = await fetch('http://localhost:8000/api/chats', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                const data = await response.json();
+                currentChatId = data.id;
+                loadChats();
+                clearMessages();
+            } catch(e) {
+                alert('Failed to create chat: ' + e.message);
+            }
+        }
+
+        async function loadChat(chatId) {
+            try {
+                const response = await fetch(`http://localhost:8000/api/chats/${chatId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                const chat = await response.json();
+                currentChatId = chat.id;
+                renderMessages(chat.messages);
+                // Update active chat in sidebar
+                document.querySelectorAll('.chat-item').forEach(item => {
+                    item.classList.toggle('active', item.dataset.chatId === chatId);
+                });
+            } catch(e) {
+                alert('Failed to load chat: ' + e.message);
+            }
+        }
+
+        function renderMessages(messages) {
+            msgsEl.innerHTML = '';
+            messages.forEach(msg => {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = `msg ${msg.role}`;
+                msgDiv.innerHTML = `<div class="msg-content">${msg.content}</div>`;
+                if (msg.token_count) {
+                    msgDiv.innerHTML += `<div class="msg-meta">Tokens: ${msg.token_count}</div>`;
+                }
+                msgsEl.appendChild(msgDiv);
+            });
+        }
+
+        function clearMessages() {
+            msgsEl.innerHTML = '';
+        }
+
+        // Research functions
+        async function loadResearchSessions() {
+            try {
+                const response = await fetch('http://localhost:8000/api/research/sessions', {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                const data = await response.json();
+                renderResearchList(data.sessions || []);
+            } catch(e) {
+                console.error('Failed to load research sessions:', e);
+            }
+        }
+
+        function renderResearchList(sessions) {
+            const researchList = document.getElementById('researchList');
+            researchList.innerHTML = '';
+            sessions.forEach(session => {
+                const li = document.createElement('li');
+                li.className = 'research-item';
+                li.textContent = `${session.query} (${session.status})`;
+                li.onclick = () => loadResearchSession(session.id);
+                researchList.appendChild(li);
+            });
+        }
+
+        async function loadResearchSession(taskId) {
+            currentResearchTaskId = taskId;
+            // Show progress and start monitoring
+            document.getElementById('researchProgress').style.display = 'block';
+            monitorResearchProgress();
+        }
+
+        async function startResearch() {
+            const topic = document.getElementById('researchTopic').value.trim();
+            const depth = document.getElementById('researchDepth').value;
+            if (!topic) return;
+
+            try {
+                const response = await fetch('http://localhost:8000/api/research/start', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        topic: topic,
+                        depth: depth
+                    })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    currentResearchTaskId = data.task_id;
+                    document.getElementById('researchProgress').style.display = 'block';
+                    monitorResearchProgress();
+                } else {
+                    alert('Research start failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch(e) {
+                alert('Failed to start research: ' + e.message);
+            }
+        }
+
+        async function monitorResearchProgress() {
+            if (!currentResearchTaskId) return;
+
+            try {
+                const response = await fetch(`http://localhost:8000/api/research/${currentResearchTaskId}/status`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                const status = await response.json();
+
+                // Update progress bar
+                const progressFill = document.getElementById('progressFill');
+                const progressText = document.getElementById('progressText');
+                const agentStatus = document.getElementById('agentStatus');
+
+                if (status.progress !== undefined) {
+                    progressFill.style.width = `${status.progress}%`;
+                    progressText.textContent = status.status || 'Running...';
+                }
+
+                if (status.agents) {
+                    agentStatus.innerHTML = '<h4>Agent Status:</h4>' +
+                        status.agents.map(agent => `<div>${agent.name}: ${agent.status}</div>`).join('');
+                }
+
+                if (status.status === 'completed' || status.status === 'failed') {
+                    // Stop monitoring
+                    return;
+                }
+
+                // Continue monitoring
+                setTimeout(monitorResearchProgress, 2000);
+            } catch(e) {
+                console.error('Failed to get research status:', e);
+            }
+        }
+
+        // Research event listeners
+        document.getElementById('startResearchBtn').onclick = startResearch;
+        document.getElementById('stopResearchBtn').onclick = async () => {
+            if (currentResearchTaskId) {
+                await fetch(`http://localhost:8000/api/research/${currentResearchTaskId}/stop`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                document.getElementById('researchProgress').style.display = 'none';
+                currentResearchTaskId = null;
+            }
+        };
+
+        // RAG functions
+        async function loadKnowledge() {
+            try {
+                const response = await fetch('http://localhost:8000/api/rag/knowledge', {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                const knowledge = await response.json();
+                renderKnowledgeList(knowledge);
+            } catch(e) {
+                console.error('Failed to load knowledge:', e);
+            }
+        }
+
+        function renderKnowledgeList(knowledge) {
+            const knowledgeList = document.getElementById('knowledgeList');
+            knowledgeList.innerHTML = '<h4>Knowledge Base</h4>';
+            knowledge.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'knowledge-item';
+                div.innerHTML = `<strong>${item.source || 'Unknown'}</strong>: ${item.content.substring(0, 100)}...`;
+                knowledgeList.appendChild(div);
+            });
+        }
+
+        // RAG event listeners
+        document.getElementById('addKnowledgeBtn').onclick = () => {
+            const content = prompt('Enter knowledge content:');
+            const source = prompt('Enter source:');
+            if (content && source) {
+                addKnowledge(content, source);
+            }
+        };
+
+        document.getElementById('maintenanceBtn').onclick = async () => {
+            try {
+                await fetch('http://localhost:8000/api/rag/maintenance', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                alert('Maintenance completed');
+                loadKnowledge();
+            } catch(e) {
+                alert('Maintenance failed: ' + e.message);
+            }
+        };
+
+        async function addKnowledge(content, source) {
+            try {
+                await fetch('http://localhost:8000/api/rag/knowledge', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({content: content, source: source})
+                });
+                loadKnowledge();
+            } catch(e) {
+                alert('Failed to add knowledge: ' + e.message);
+            }
+        }
+
+        // Tab switching
+        const chatTab = document.getElementById('chatTab');
+        const researchTab = document.getElementById('researchTab');
+        const ragTab = document.getElementById('ragTab');
+        const chatView = document.getElementById('chatView');
+        const researchView = document.getElementById('researchView');
+        const chatPanel = document.getElementById('chatPanel');
+        const researchPanel = document.getElementById('researchPanel');
+        const ragPanel = document.getElementById('ragPanel');
+
+        chatTab.onclick = () => {
+            chatTab.classList.add('active');
+            researchTab.classList.remove('active');
+            chatView.classList.add('active');
+            researchView.classList.remove('active');
+            chatPanel.classList.add('active');
+            researchPanel.classList.remove('active');
+        };
+
+        researchTab.onclick = () => {
+            researchTab.classList.add('active');
+            chatTab.classList.remove('active');
+            ragTab.classList.remove('active');
+            researchView.classList.add('active');
+            chatView.classList.remove('active');
+            researchPanel.classList.add('active');
+            chatPanel.classList.remove('active');
+            ragPanel.classList.remove('active');
+            loadResearchSessions();
+        };
+
+        ragTab.onclick = () => {
+            ragTab.classList.add('active');
+            chatTab.classList.remove('active');
+            researchTab.classList.remove('active');
+            ragPanel.classList.add('active');
+            chatPanel.classList.remove('active');
+            researchPanel.classList.remove('active');
+            loadKnowledge();
+        };
+
+        // Search functionality
+        const chatSearch = document.getElementById('chatSearch');
+        chatSearch.addEventListener('input', (e) => {
+            loadChats(e.target.value);
+        });
+
+        if (accessToken) {
+            showChat();
+            loadChats();
+        }
+
+        loginBtn.onclick = async () => {
+            try {
+                const response = await fetch('http://localhost:8000/api/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: usernameEl.value,
+                        password: passwordEl.value
+                    })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    accessToken = data.access_token;
+                    localStorage.setItem('accessToken', accessToken);
+                    showChat();
+                    loadChats();
+                } else {
+                    alert(data.detail);
+                }
+            } catch(e) {
+                alert('Login failed: ' + e.message);
+            }
+        };
+
+        registerBtn.onclick = async () => {
+            try {
+                const response = await fetch('http://localhost:8000/api/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: usernameEl.value,
+                        password: passwordEl.value
+                    })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    accessToken = data.access_token;
+                    localStorage.setItem('accessToken', accessToken);
+                    showChat();
+                    loadChats();
+                } else {
+                    alert(data.detail);
+                }
+            } catch(e) {
+                alert('Registration failed: ' + e.message);
+            }
+        };
+
+        settingsBtn.onclick = () => {
+            settingsOverlay.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        };
+
+        closeSettings.onclick = () => {
+            settingsOverlay.style.display = 'none';
+            document.body.style.overflow = '';
+        };
+
+        settingsOverlay.onclick = (e) => {
+            if (e.target === settingsOverlay) {
+                settingsOverlay.style.display = 'none';
+                document.body.style.overflow = '';
+            }
+        };
+
+        toggleSidebar.onclick = () => {
+            sidebar.classList.toggle('show');
+        };
+
+        closeSidebar.onclick = () => {
+            sidebar.classList.remove('show');
+        };
+
+        shareBtnSidebar.onclick = async () => {
+            try {
+                const r = await fetch('http://localhost:8000/api/share', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await r.json();
+                await navigator.clipboard.writeText(data.link);
+                alert('Share link copied!');
+            } catch(e) {
+                alert('Error: ' + e.message);
+            }
+        };
+
+        themeRadios.forEach(radio => {
+            radio.addEventListener('change', async (e) => {
+                const newTheme = e.target.value;
+                try {
+                    await fetch('http://localhost:8000/api/config', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({theme: newTheme})
+                    });
+                    location.reload();
+                } catch(e) {
+                    alert('Error saving theme: ' + e.message);
+                }
+            });
+        });
+                    location.reload();
+                } catch(e) {
+                    alert('Error saving theme: ' + e.message);
+                }
+            });
+        });
+
+        sendBtn.onclick = async () => {
+            const message = promptEl.value.trim();
+            if (!message) return;
+
+            // Add user message to UI
+            const userMsgDiv = document.createElement('div');
+            userMsgDiv.className = 'msg user';
+            userMsgDiv.textContent = message;
+            msgsEl.appendChild(userMsgDiv);
+            const currentMessage = message;
+            promptEl.value = '';
+
+            try {
+                // Send to chat API
+                const response = await fetch('http://localhost:8000/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: currentMessage,
+                        chat_id: currentChatId
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    // Add AI response to UI
+                    const aiMsgDiv = document.createElement('div');
+                    aiMsgDiv.className = 'msg assistant';
+                    aiMsgDiv.textContent = data.response;
+                    msgsEl.appendChild(aiMsgDiv);
+
+                    // If no chat selected, create one and add messages
+                    if (!currentChatId) {
+                        const chatResponse = await fetch('http://localhost:8000/api/chats', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`
+                            }
+                        });
+                        const chatData = await chatResponse.json();
+                        currentChatId = chatData.id;
+                        loadChats();
+                    }
+                } else {
+                    alert('Chat error: ' + (data.error || 'Unknown error'));
+                }
+
+            } catch(e) {
+                alert('Failed to send message: ' + e.message);
+            }
+        };
+
+        promptEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendBtn.click();
+            }
+        });
+    </script>
+</body>
+</html>
+"""
+    return html
+
+@app.post("/api/share")
+def api_share(request: Request, current_user: dict = Depends(get_current_user)):
+    base_url = str(request.base_url).rstrip('/')
+    link = f"{base_url}/share"
+    return {"link": link}
+
+@app.post("/api/config")
+def api_config(data: dict, current_user: dict = Depends(get_current_user)):
+    # Update user settings in database
+    import sqlite3
+    with sqlite3.connect(db.db_path) as conn:
+        cursor = conn.cursor()
+        for key, value in data.items():
+            cursor.execute("""
+                INSERT OR REPLACE INTO settings (user_id, key, value)
+                VALUES (?, ?, ?)
+            """, (current_user["id"], key, json.dumps(value)))
+        conn.commit()
+    return {"status": "ok"}
+
+@app.get("/api/config")
+def get_config(current_user: dict = Depends(get_current_user)):
+    # Get user settings from database
+    import sqlite3
+    config = {}
+    with sqlite3.connect(db.db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM settings WHERE user_id = ?", (current_user["id"],))
+        for row in cursor.fetchall():
+            key, value_json = row
+            config[key] = json.loads(value_json)
+    return config

@@ -221,7 +221,11 @@ class IntelligentToolSelector:
             ],
             "iterative_research": [
                 {
-                    "patterns": ["deep research", "iterative", "comprehensive research"],
+                    "patterns": [
+                        "deep research",
+                        "iterative",
+                        "comprehensive research",
+                    ],
                     "keywords": ["analysis", "thorough", "detailed"],
                     "weight": 0.9,
                 },

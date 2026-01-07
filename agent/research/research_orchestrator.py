@@ -21,11 +21,11 @@ sys.path.insert(0, parent_dir)
 try:
     from ...utils.context_manager import ContextManager, ContextWindowStrategy
     from ...utils.memory_manager import (MemoryAction, MemoryAwareMixin,
-                                          MemoryManager)
-    from .multi_agent_system import AgentRole, MultiAgentSystem
-    from .iterative_research import IterativeResearchTool
-    from .web_scraper import WebScraper, ScrapingConfig
+                                         MemoryManager)
     from ..ollama_client import OllamaClient, OllamaConfig
+    from .iterative_research import IterativeResearchTool
+    from .multi_agent_system import AgentRole, MultiAgentSystem
+    from .web_scraper import ScrapingConfig, WebScraper
 except ImportError:
     # Fallback for when imports fail
     ContextManager = None
@@ -597,17 +597,19 @@ class ResearchOrchestrator:
                         model="llama3.2:3b",
                         max_iterations=2,
                         search_limit=3,
-                        deep_research=False
+                        deep_research=False,
                     )
 
                     # Parse research result into findings
-                    findings = [{
-                        "id": f"finding_{topic.id}_1",
-                        "content": research_result,
-                        "source": "web_research",
-                        "confidence": 0.8,
-                        "timestamp": datetime.now().isoformat(),
-                    }]
+                    findings = [
+                        {
+                            "id": f"finding_{topic.id}_1",
+                            "content": research_result,
+                            "source": "web_research",
+                            "confidence": 0.8,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    ]
                 else:
                     # Fallback to simulation
                     self.logger.info(f"Using simulation for topic: {topic.title}")
@@ -648,17 +650,19 @@ class ResearchOrchestrator:
                     model="llama3.2:3b",
                     max_iterations=3,
                     search_limit=5,
-                    deep_research=True
+                    deep_research=True,
                 )
 
                 # Parse research result into findings
-                deep_findings = [{
-                    "id": f"deep_finding_{topic.id}_1",
-                    "content": research_result,
-                    "source": "deep_web_research",
-                    "confidence": 0.9,
-                    "timestamp": datetime.now().isoformat(),
-                }]
+                deep_findings = [
+                    {
+                        "id": f"deep_finding_{topic.id}_1",
+                        "content": research_result,
+                        "source": "deep_web_research",
+                        "confidence": 0.9,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                ]
             else:
                 # Fallback to simulation
                 self.logger.info(f"Using deep simulation for topic: {topic.title}")

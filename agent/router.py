@@ -5,8 +5,31 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
+
+@dataclass
+class MockTool:
+    name: str
+    description: str
+
 from .defaults import DEFAULTS
 from .models import Mode, RouteDecision, StopConditions, ToolBudget
+
+# Configurable tool list
+AVAILABLE_TOOLS = [
+    "read_file",
+    "list_dir",
+    "write_file",
+    "edit_file",
+    "web_search",
+    "kiwix_query",
+    "fetch_url",
+    "rag_search",
+    "github_search",
+    "github_fetch",
+    "run_command",
+    "duckduckgo_search",
+    "iterative_research",
+]
 
 _OVERRIDE_RE = re.compile(r"\bmode\s*=\s*(WRITE|EDIT|RESEARCH|HYBRID)\b", re.IGNORECASE)
 _RESEARCH_MODE_RE = re.compile(
@@ -149,34 +172,10 @@ def _recommend_tools(user_text: str, mode: Mode) -> List[str]:
         from .tool_learning import get_learning_system
 
         # Get all available tools
-        available_tools = []
-        tool_names = [
-            "read_file",
-            "list_dir",
-            "write_file",
-            "edit_file",
-            "web_search",
-            "kiwix_query",
-            "fetch_url",
-            "rag_search",
-            "github_search",
-            "github_fetch",
-            "run_command",
-            "duckduckgo_search",
-            "iterative_research",
-        ]
-
-        for tool_name in tool_names:
-            available_tools.append(
-                type(
-                    f"Mock{tool_name.title()}Tool",
-                    (),
-                    {"name": tool_name, "description": f"Mock {tool_name} tool"},
-                )()
-            )
+        available_tools = [MockTool(name=tool_name, description=f"Mock {tool_name} tool") for tool_name in AVAILABLE_TOOLS]
 
         # Use intelligent selector
-        selector = IntelligentToolSelector(available_tools)
+        selector = IntelligentToolSelector(available_tools)  # type: ignore
         intelligent_selection = selector.select_tools(user_text, mode, max_tools=6)
 
         # Get learning system recommendations
@@ -225,7 +224,13 @@ def _recommend_tools_fallback(user_text: str, mode: Mode) -> List[str]:
         tools.append("web_search")
 
     if mode == Mode.RESEARCH:
-        tools = ["kiwix_query", "web_search", "fetch_url", "duckduckgo_search", "iterative_research"]
+        tools = [
+            "kiwix_query",
+            "web_search",
+            "fetch_url",
+            "duckduckgo_search",
+            "iterative_research",
+        ]
     elif mode == Mode.HYBRID:
         tools = ["kiwix_query", "web_search", "rag_search", "read_file", "list_dir"]
     elif mode == Mode.WRITE:

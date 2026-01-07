@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..research.iterative_research import IterativeResearchToolClass
 from .agent_tools import (BaseTool, DirectoryListTool, FileEditTool,
                           FileReadTool, GitHubFetchTool, GitHubSearchTool,
                           KiwixQueryTool, ListSkillsTool, PackageTool,
@@ -7,7 +8,6 @@ from .agent_tools import (BaseTool, DirectoryListTool, FileEditTool,
                           ToolResult, UrlFetchTool, WebSearchTool,
                           _check_project_path, _handle_file_error)
 from .duckduckgo_search import DuckDuckGoSearchTool
-from ..research.iterative_research import IterativeResearchToolClass
 
 
 def get_all_tools():

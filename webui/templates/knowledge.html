@@ -1,0 +1,857 @@
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Knowledge Base - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="knowledge-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Knowledge Base</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/knowledge">
+                        <span class="nav-icon">📚</span>
+                        Knowledge
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/knowledge/graph">
+                        <span class="nav-icon">🔗</span>
+                        Knowledge Graph
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/knowledge/search">
+                        <span class="nav-icon">🔍</span>
+                        Advanced Search
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/knowledge/analytics">
+                        <span class="nav-icon">📊</span>
+                        Analytics
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Knowledge Base</h1>
+                <div class="header-actions">
+                    <button class="btn btn-primary" id="addKnowledgeBtn">
+                        <span class="btn-icon">+</span>
+                        Add Knowledge
+                    </button>
+                    <button class="btn btn-secondary" id="importKnowledgeBtn">
+                        <span class="btn-icon">📥</span>
+                        Import
+                    </button>
+                    <button class="btn btn-secondary" id="exportKnowledgeBtn">
+                        <span class="btn-icon">📤</span>
+                        Export
+                    </button>
+                    <button class="btn btn-secondary" id="graphViewBtn">
+                        <span class="btn-icon">🔗</span>
+                        Graph View
+                    </button>
+                </div>
+            </header>
+
+            <div class="knowledge-toolbar">
+                <div class="search-container">
+                    <input type="text" id="knowledgeSearch" placeholder="Search knowledge base..." class="search-input">
+                    <select id="searchType">
+                        <option value="all">All Content</option>
+                        <option value="title">Title Only</option>
+                        <option value="content">Content Only</option>
+                        <option value="tags">Tags Only</option>
+                    </select>
+                    <button class="btn btn-secondary" id="advancedSearchBtn">🔍 Advanced</button>
+                </div>
+                <div class="filter-controls">
+                    <select id="categoryFilter">
+                        <option value="">All Categories</option>
+                        <option value="research">Research</option>
+                        <option value="documentation">Documentation</option>
+                        <option value="notes">Notes</option>
+                        <option value="articles">Articles</option>
+                        <option value="code">Code Snippets</option>
+                        <option value="references">References</option>
+                    </select>
+                    <select id="sortBy">
+                        <option value="relevance">Relevance</option>
+                        <option value="date">Date Added</option>
+                        <option value="title">Title</option>
+                        <option value="usage">Most Used</option>
+                    </select>
+                    <select id="dateFilter">
+                        <option value="">All Time</option>
+                        <option value="today">Today</option>
+                        <option value="week">This Week</option>
+                        <option value="month">This Month</option>
+                        <option value="year">This Year</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="knowledge-stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalItems">0</div>
+                    <div class="stat-label">Total Items</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="categoriesCount">0</div>
+                    <div class="stat-label">Categories</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="tagsCount">0</div>
+                    <div class="stat-label">Unique Tags</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="connectionsCount">0</div>
+                    <div class="stat-label">Connections</div>
+                </div>
+            </div>
+
+            <div class="knowledge-views">
+                <div class="view-tabs">
+                    <button class="view-tab active" data-view="grid">Grid View</button>
+                    <button class="view-tab" data-view="list">List View</button>
+                    <button class="view-tab" data-view="graph">Graph View</button>
+                </div>
+
+                <div class="knowledge-content">
+                    <div class="knowledge-grid active" id="knowledgeGrid">
+                        <!-- Knowledge items will be loaded here -->
+                        <div class="knowledge-item loading">
+                            <div class="item-header">
+                                <div class="item-title">Loading knowledge base...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="knowledge-list" id="knowledgeList" style="display: none;">
+                        <!-- List view will be populated here -->
+                    </div>
+
+                    <div class="knowledge-graph" id="knowledgeGraph" style="display: none;">
+                        <div class="graph-container">
+                            <div class="graph-toolbar">
+                                <button class="btn btn-sm" id="zoomInBtn">+</button>
+                                <button class="btn btn-sm" id="zoomOutBtn">-</button>
+                                <button class="btn btn-sm" id="fitGraphBtn">Fit</button>
+                                <button class="btn btn-sm" id="resetGraphBtn">Reset</button>
+                                <span class="graph-info" id="graphInfo">Nodes: 0 | Edges: 0</span>
+                            </div>
+                            <div class="graph-canvas" id="graphCanvas">
+                                <!-- Knowledge graph visualization will be rendered here -->
+                                <div class="graph-placeholder">
+                                    <div class="graph-placeholder-icon">🔗</div>
+                                    <h3>Knowledge Graph</h3>
+                                    <p>Visual representation of knowledge connections and relationships</p>
+                                    <button class="btn btn-primary" id="generateGraphBtn">Generate Graph</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Knowledge Modal -->
+    <div class="modal" id="addKnowledgeModal" style="display: none;">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Add Knowledge</h3>
+                <button class="modal-close" onclick="closeAddKnowledgeModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="addKnowledgeForm">
+                    <div class="form-group">
+                        <label for="knowledgeTitle">Title *</label>
+                        <input type="text" id="knowledgeTitle" required placeholder="Enter a descriptive title">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="knowledgeCategory">Category *</label>
+                        <select id="knowledgeCategory" required>
+                            <option value="">Select Category</option>
+                            <option value="research">Research</option>
+                            <option value="documentation">Documentation</option>
+                            <option value="notes">Notes</option>
+                            <option value="articles">Articles</option>
+                            <option value="code">Code Snippets</option>
+                            <option value="references">References</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="knowledgeSource">Source</label>
+                        <input type="text" id="knowledgeSource" placeholder="URL, file path, book title, or reference">
+                        <small class="form-help">Optional: Where did this knowledge come from?</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="knowledgeContent">Content *</label>
+                        <textarea id="knowledgeContent" rows="8" placeholder="Enter the knowledge content..." required></textarea>
+                        <small class="form-help">You can use Markdown formatting</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="knowledgeTags">Tags</label>
+                        <input type="text" id="knowledgeTags" placeholder="ai, machine-learning, research">
+                        <small class="form-help">Comma-separated tags for better organization</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="knowledgeConnections">Related Items</label>
+                        <select id="knowledgeConnections" multiple>
+                            <option value="">Select related knowledge items...</option>
+                            <!-- Will be populated dynamically -->
+                        </select>
+                        <small class="form-help">Link this item to related knowledge for better discovery</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="makePublic"> Make this knowledge public
+                        </label>
+                        <small class="form-help">Public items can be discovered by other users</small>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="previewKnowledgeBtn">👁️ Preview</button>
+                        <button type="submit" class="btn btn-primary">Add Knowledge</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeAddKnowledgeModal()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Knowledge Item Detail Modal -->
+    <div class="modal" id="knowledgeDetailModal" style="display: none;">
+        <div class="modal-content modal-xl">
+            <div class="modal-header">
+                <h3 id="detailTitle">Knowledge Item</h3>
+                <button class="modal-close" onclick="closeKnowledgeDetailModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="knowledge-detail">
+                    <div class="detail-meta">
+                        <span class="detail-category" id="detailCategory"></span>
+                        <span class="detail-date" id="detailDate"></span>
+                        <span class="detail-source" id="detailSource"></span>
+                        <span class="detail-visibility" id="detailVisibility">Private</span>
+                    </div>
+                    <div class="detail-tags" id="detailTags"></div>
+                    <div class="detail-content" id="detailContent"></div>
+
+                    <div class="detail-connections">
+                        <h4>Related Knowledge</h4>
+                        <div class="connections-list" id="connectionsList">
+                            <!-- Related items will be shown here -->
+                        </div>
+                    </div>
+
+                    <div class="detail-insights">
+                        <h4>Usage Insights</h4>
+                        <div class="insights-grid">
+                            <div class="insight-item">
+                                <span class="insight-value" id="viewCount">0</span>
+                                <span class="insight-label">Views</span>
+                            </div>
+                            <div class="insight-item">
+                                <span class="insight-value" id="referenceCount">0</span>
+                                <span class="insight-label">References</span>
+                            </div>
+                            <div class="insight-item">
+                                <span class="insight-value" id="lastAccessed">Never</span>
+                                <span class="insight-label">Last Accessed</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="detail-actions">
+                    <button class="btn btn-secondary" onclick="editKnowledge()">✏️ Edit</button>
+                    <button class="btn btn-secondary" onclick="duplicateKnowledge()">📋 Duplicate</button>
+                    <button class="btn btn-secondary" onclick="shareKnowledge()">🔗 Share</button>
+                    <button class="btn btn-danger" onclick="deleteKnowledge()">🗑️ Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Advanced Search Modal -->
+    <div class="modal" id="advancedSearchModal" style="display: none;">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Advanced Search</h3>
+                <button class="modal-close" onclick="closeAdvancedSearchModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="advancedSearchForm">
+                    <div class="search-filters">
+                        <div class="filter-group">
+                            <label>Keywords</label>
+                            <input type="text" id="searchKeywords" placeholder="Enter search terms">
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Categories</label>
+                            <div class="checkbox-group">
+                                <label><input type="checkbox" value="research"> Research</label>
+                                <label><input type="checkbox" value="documentation"> Documentation</label>
+                                <label><input type="checkbox" value="notes"> Notes</label>
+                                <label><input type="checkbox" value="articles"> Articles</label>
+                            </div>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Date Range</label>
+                            <div class="date-range">
+                                <input type="date" id="dateFrom">
+                                <span>to</span>
+                                <input type="date" id="dateTo">
+                            </div>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Author/Owner</label>
+                            <input type="text" id="authorFilter" placeholder="Filter by author">
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Content Type</label>
+                            <select id="contentTypeFilter">
+                                <option value="">All Types</option>
+                                <option value="text">Text</option>
+                                <option value="code">Code</option>
+                                <option value="link">Links</option>
+                                <option value="file">Files</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>Advanced Options</label>
+                            <div class="checkbox-group">
+                                <label><input type="checkbox" id="exactMatch"> Exact phrase match</label>
+                                <label><input type="checkbox" id="caseSensitive"> Case sensitive</label>
+                                <label><input type="checkbox" id="includeArchived"> Include archived</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="search-preview" id="searchPreview">
+                        <h4>Search Preview</h4>
+                        <div id="searchQueryDisplay">Enter search criteria to see preview</div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="resetAdvancedSearch()">Reset</button>
+                        <button type="submit" class="btn btn-primary">Search</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeAdvancedSearchModal()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allKnowledge = [];
+        let filteredKnowledge = [];
+        let currentView = 'grid';
+        let graphData = null;
+
+        document.addEventListener('DOMContentLoaded', function() {{
+            const token = localStorage.getItem('accessToken');
+            if (!token) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            initializeKnowledge();
+            setupEventListeners();
+        }});
+
+        function initializeKnowledge() {{
+            loadKnowledge();
+            loadKnowledgeStats();
+        }}
+
+        function setupEventListeners() {{
+            document.getElementById('addKnowledgeBtn').addEventListener('click', showAddKnowledgeModal);
+            document.getElementById('knowledgeSearch').addEventListener('input', debounce(filterKnowledge, 300));
+            document.getElementById('categoryFilter').addEventListener('change', filterKnowledge);
+            document.getElementById('sortBy').addEventListener('change', sortKnowledge);
+            document.getElementById('dateFilter').addEventListener('change', filterKnowledge);
+            document.getElementById('searchType').addEventListener('change', filterKnowledge);
+            document.getElementById('advancedSearchBtn').addEventListener('click', showAdvancedSearchModal);
+            document.getElementById('graphViewBtn').addEventListener('click', () => switchView('graph'));
+            document.getElementById('generateGraphBtn').addEventListener('click', generateKnowledgeGraph);
+
+            // View switching
+            document.querySelectorAll('.view-tab').forEach(tab => {{
+                tab.addEventListener('click', (e) => switchView(e.target.dataset.view));
+            }});
+
+            // Form submissions
+            document.getElementById('addKnowledgeForm').addEventListener('submit', addKnowledge);
+            document.getElementById('advancedSearchForm').addEventListener('submit', performAdvancedSearch);
+
+            // Graph controls
+            document.getElementById('zoomInBtn').addEventListener('click', () => zoomGraph(1.2));
+            document.getElementById('zoomOutBtn').addEventListener('click', () => zoomGraph(0.8));
+            document.getElementById('fitGraphBtn').addEventListener('click', fitGraph);
+            document.getElementById('resetGraphBtn').addEventListener('click', resetGraph);
+        }}
+
+        async function loadKnowledge() {{
+            const token = localStorage.getItem('accessToken');
+            try {{
+                const response = await fetch('/api/rag/knowledge', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (response.ok) {{
+                    allKnowledge = await response.json();
+                    filteredKnowledge = [...allKnowledge];
+                    sortKnowledge();
+                    renderKnowledgeGrid(filteredKnowledge);
+                    updateConnectionsSelect();
+                }} else {{
+                    showEmptyState();
+                }}
+            }} catch (error) {{
+                console.error('Failed to load knowledge:', error);
+                showEmptyState();
+            }}
+        }}
+
+        async function loadKnowledgeStats() {{
+            const token = localStorage.getItem('accessToken');
+            try {{
+                const response = await fetch('/api/knowledge/stats', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+
+                if (response.ok) {{
+                    const stats = await response.json();
+                    updateStats(stats);
+                }} else {{
+                    // Fallback stats
+                    updateStats({{
+                        total: allKnowledge.length,
+                        categories: new Set(allKnowledge.map(k => k.category)).size,
+                        tags: new Set(allKnowledge.flatMap(k => k.tags || [])).size,
+                        connections: Math.floor(allKnowledge.length * 1.5)
+                    }});
+                }}
+            }} catch (error) {{
+                console.error('Failed to load stats:', error);
+                updateStats({{
+                    total: allKnowledge.length,
+                    categories: 0,
+                    tags: 0,
+                    connections: 0
+                }});
+            }}
+        }}
+
+        function updateStats(stats) {{
+            document.getElementById('totalItems').textContent = stats.total || 0;
+            document.getElementById('categoriesCount').textContent = stats.categories || 0;
+            document.getElementById('tagsCount').textContent = stats.tags || 0;
+            document.getElementById('connectionsCount').textContent = stats.connections || 0;
+        }}
+
+        function renderKnowledgeGrid(knowledge) {{
+            const grid = document.getElementById('knowledgeGrid');
+
+            if (knowledge.length === 0) {{
+                showEmptyState();
+                return;
+            }}
+
+            grid.innerHTML = '';
+
+            knowledge.forEach(item => {{
+                const itemEl = document.createElement('div');
+                itemEl.className = 'knowledge-item';
+                itemEl.onclick = () => showKnowledgeDetail(item);
+
+                const tags = item.tags ? item.tags.slice(0, 3) : [];
+                const previewText = item.content ? item.content.substring(0, 120) + '...' : 'No content';
+
+                itemEl.innerHTML = `
+                    <div class="item-header">
+                        <div class="item-title">${{item.title || 'Untitled'}}</div>
+                        <div class="item-category">${{item.category || 'uncategorized'}}</div>
+                    </div>
+                    <div class="item-preview">${{previewText}}</div>
+                    <div class="item-meta">
+                        <span class="item-date">${{formatDate(item.created_at)}}</span>
+                        ${{tags.length > 0 ? `<div class="item-tags">${{tags.map(tag => `<span class="tag">${{tag}}</span>`).join('')}}</div>` : ''}}
+                    </div>
+                    <div class="item-actions">
+                        <button class="item-action-btn" onclick="event.stopPropagation(); quickView('${{item.id}}')">👁️</button>
+                        <button class="item-action-btn" onclick="event.stopPropagation(); addToFavorites('${{item.id}}')">⭐</button>
+                        <button class="item-action-btn" onclick="event.stopPropagation(); showItemMenu('${{item.id}}')">⋯</button>
+                    </div>
+                `;
+
+                grid.appendChild(itemEl);
+            }});
+        }}
+
+        function renderKnowledgeList(knowledge) {{
+            const list = document.getElementById('knowledgeList');
+
+            if (knowledge.length === 0) {{
+                list.innerHTML = '<div class="no-knowledge">No knowledge items found</div>';
+                return;
+            }}
+
+            list.innerHTML = '<div class="list-header"><span>Title</span><span>Category</span><span>Tags</span><span>Date</span></div>';
+
+            knowledge.forEach(item => {{
+                const itemEl = document.createElement('div');
+                itemEl.className = 'list-item';
+                itemEl.onclick = () => showKnowledgeDetail(item);
+
+                const tags = item.tags ? item.tags.join(', ') : '';
+                const previewText = item.content ? item.content.substring(0, 80) + '...' : '';
+
+                itemEl.innerHTML = `
+                    <div class="list-cell title-cell">
+                        <div class="item-title">${{item.title || 'Untitled'}}</div>
+                        <div class="item-preview">${{previewText}}</div>
+                    </div>
+                    <div class="list-cell">${{item.category || 'uncategorized'}}</div>
+                    <div class="list-cell">${{tags}}</div>
+                    <div class="list-cell">${{formatDate(item.created_at)}}</div>
+                `;
+
+                list.appendChild(itemEl);
+            }});
+        }}
+
+        function showEmptyState() {{
+            const grid = document.getElementById('knowledgeGrid');
+            grid.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">📚</div>
+                    <h3>No knowledge items yet</h3>
+                    <p>Start building your knowledge base by adding your first item.</p>
+                    <button class="btn btn-primary" onclick="showAddKnowledgeModal()">Add Your First Item</button>
+                </div>
+            `;
+        }}
+
+        function filterKnowledge() {{
+            const searchTerm = document.getElementById('knowledgeSearch').value.toLowerCase();
+            const categoryFilter = document.getElementById('categoryFilter').value;
+            const dateFilter = document.getElementById('dateFilter').value;
+            const searchType = document.getElementById('searchType').value;
+
+            filteredKnowledge = allKnowledge.filter(item => {{
+                // Category filter
+                if (categoryFilter && item.category !== categoryFilter) return false;
+
+                // Date filter
+                if (dateFilter) {{
+                    const itemDate = new Date(item.created_at);
+                    const now = new Date();
+                    const daysDiff = (now - itemDate) / (1000 * 60 * 60 * 24);
+
+                    switch (dateFilter) {{
+                        case 'today': if (daysDiff > 1) return false; break;
+                        case 'week': if (daysDiff > 7) return false; break;
+                        case 'month': if (daysDiff > 30) return false; break;
+                        case 'year': if (daysDiff > 365) return false; break;
+                    }}
+                }}
+
+                // Search filter
+                if (searchTerm) {{
+                    let searchableText = '';
+
+                    switch (searchType) {{
+                        case 'title':
+                            searchableText = item.title || '';
+                            break;
+                        case 'content':
+                            searchableText = item.content || '';
+                            break;
+                        case 'tags':
+                            searchableText = (item.tags || []).join(' ');
+                            break;
+                        default:
+                            searchableText = `${{item.title || ''}} ${{item.content || ''}} ${{(item.tags || []).join(' ')}} ${{item.category || ''}}`;
+                    }}
+
+                    if (!searchableText.toLowerCase().includes(searchTerm)) return false;
+                }}
+
+                return true;
+            }});
+
+            sortKnowledge();
+            renderCurrentView();
+        }}
+
+        function sortKnowledge() {{
+            const sortBy = document.getElementById('sortBy').value;
+
+            filteredKnowledge.sort((a, b) => {{
+                switch (sortBy) {{
+                    case 'date':
+                        return new Date(b.created_at) - new Date(a.created_at);
+                    case 'title':
+                        return (a.title || '').localeCompare(b.title || '');
+                    case 'usage':
+                        return (b.usage_count || 0) - (a.usage_count || 0);
+                    case 'relevance':
+                    default:
+                        // For relevance, keep current order or implement scoring
+                        return 0;
+                }}
+            }});
+        }}
+
+        function switchView(view) {{
+            currentView = view;
+
+            // Update tab buttons
+            document.querySelectorAll('.view-tab').forEach(tab => {{
+                tab.classList.toggle('active', tab.dataset.view === view);
+            }});
+
+            // Update content visibility
+            document.getElementById('knowledgeGrid').style.display = view === 'grid' ? 'grid' : 'none';
+            document.getElementById('knowledgeList').style.display = view === 'list' ? 'block' : 'none';
+            document.getElementById('knowledgeGraph').style.display = view === 'graph' ? 'block' : 'none';
+
+            // Render appropriate view
+            if (view === 'list') {{
+                renderKnowledgeList(filteredKnowledge);
+            }} else if (view === 'graph') {{
+                if (!graphData) {{
+                    generateKnowledgeGraph();
+                }}
+            }}
+        }}
+
+        function renderCurrentView() {{
+            switch (currentView) {{
+                case 'grid':
+                    renderKnowledgeGrid(filteredKnowledge);
+                    break;
+                case 'list':
+                    renderKnowledgeList(filteredKnowledge);
+                    break;
+                case 'graph':
+                    // Graph view handles its own rendering
+                    break;
+            }}
+        }}
+
+        function showAddKnowledgeModal() {{
+            document.getElementById('addKnowledgeModal').style.display = 'flex';
+            updateConnectionsSelect();
+        }}
+
+        function closeAddKnowledgeModal() {{
+            document.getElementById('addKnowledgeModal').style.display = 'none';
+            document.getElementById('addKnowledgeForm').reset();
+        }}
+
+        function updateConnectionsSelect() {{
+            const select = document.getElementById('knowledgeConnections');
+            select.innerHTML = '<option value="">Select related knowledge items...</option>';
+
+            allKnowledge.slice(0, 10).forEach(item => {{
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = item.title || 'Untitled';
+                select.appendChild(option);
+            });
+        }}
+
+        async function addKnowledge(e) {{
+            e.preventDefault();
+
+            const token = localStorage.getItem('accessToken');
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            // Parse tags
+            if (data.knowledgeTags) {{
+                data.tags = data.knowledgeTags.split(',').map(tag => tag.trim()).filter(tag => tag);
+                delete data.knowledgeTags;
+            }}
+
+            // Parse connections
+            if (data.knowledgeConnections) {{
+                data.connections = Array.from(document.getElementById('knowledgeConnections').selectedOptions)
+                    .map(option => option.value);
+                delete data.knowledgeConnections;
+            }}
+
+            try {{
+                const response = await fetch('/api/rag/knowledge', {{
+                    method: 'POST',
+                    headers: {{
+                        'Authorization': `Bearer ${{token}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(data)
+                }});
+
+                if (response.ok) {{
+                    closeAddKnowledgeModal();
+                    loadKnowledge();
+                    loadKnowledgeStats();
+                    UI.showToast('Knowledge added successfully!', 'success');
+                }} else {{
+                    UI.showToast('Failed to add knowledge', 'error');
+                }}
+            }} catch (error) {{
+                UI.showToast('Error adding knowledge: ' + error.message, 'error');
+            }}
+        }}
+
+        function showKnowledgeDetail(item) {{
+            const modal = document.getElementById('knowledgeDetailModal');
+            document.getElementById('detailTitle').textContent = item.title || 'Untitled';
+            document.getElementById('detailCategory').textContent = item.category || 'uncategorized';
+            document.getElementById('detailDate').textContent = formatDate(item.created_at);
+            document.getElementById('detailSource').textContent = item.source || 'Unknown source';
+            document.getElementById('detailVisibility').textContent = item.public ? 'Public' : 'Private';
+
+            const tagsContainer = document.getElementById('detailTags');
+            tagsContainer.innerHTML = item.tags ? item.tags.map(tag => `<span class="tag">${{tag}}</span>`).join('') : '';
+
+            document.getElementById('detailContent').innerHTML = formatKnowledgeContent(item.content);
+
+            // Load connections and insights
+            loadItemConnections(item.id);
+            loadItemInsights(item.id);
+
+            modal.style.display = 'flex';
+        }}
+
+        function formatKnowledgeContent(content) {{
+            if (!content) return '<p>No content available</p>';
+
+            return content
+                .replace(/\\n/g, '<br>')
+                .replace(/```([\\s\\S]*?)```/g, '<pre><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\\*\\*([^\\*\\*]+)\\*\\*/g, '<strong>$1</strong>')
+                .replace(/\\*([^\\*]+)\\*/g, '<em>$1</em>');
+        }}
+
+        async function loadItemConnections(itemId) {{
+            // Placeholder for loading related items
+            const connectionsList = document.getElementById('connectionsList');
+            connectionsList.innerHTML = '<p>No related items found</p>';
+        }}
+
+        async function loadItemInsights(itemId) {{
+            // Placeholder for loading usage insights
+            document.getElementById('viewCount').textContent = '0';
+            document.getElementById('referenceCount').textContent = '0';
+            document.getElementById('lastAccessed').textContent = 'Never';
+        }}
+
+        function closeKnowledgeDetailModal() {{
+            document.getElementById('knowledgeDetailModal').style.display = 'none';
+        }}
+
+        function showAdvancedSearchModal() {{
+            document.getElementById('advancedSearchModal').style.display = 'flex';
+        }}
+
+        function closeAdvancedSearchModal() {{
+            document.getElementById('advancedSearchModal').style.display = 'none';
+        }}
+
+        function performAdvancedSearch(e) {{
+            e.preventDefault();
+            // Implement advanced search logic
+            UI.showToast('Advanced search functionality coming soon!', 'info');
+            closeAdvancedSearchModal();
+        }}
+
+        function generateKnowledgeGraph() {{
+            // Placeholder for knowledge graph generation
+            const canvas = document.getElementById('graphCanvas');
+            canvas.innerHTML = `
+                <div class="graph-placeholder">
+                    <div class="graph-placeholder-icon">🔄</div>
+                    <h3>Generating Knowledge Graph</h3>
+                    <p>Analyzing relationships between knowledge items...</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 65%"></div>
+                    </div>
+                </div>
+            `;
+
+            // Simulate graph generation
+            setTimeout(() => {{
+                canvas.innerHTML = `
+                    <div class="graph-visualization">
+                        <svg width="100%" height="400" viewBox="0 0 800 400">
+                            <!-- Placeholder nodes and edges -->
+                            <circle cx="200" cy="150" r="40" fill="#007bff" />
+                            <circle cx="400" cy="200" r="40" fill="#28a745" />
+                            <circle cx="600" cy="150" r="40" fill="#ffc107" />
+                            <line x1="240" y1="150" x2="360" y2="200" stroke="#666" stroke-width="2" />
+                            <line x1="440" y1="200" x2="560" y2="150" stroke="#666" stroke-width="2" />
+                            <text x="200" y="155" text-anchor="middle" fill="white" font-size="12">AI</text>
+                            <text x="400" y="205" text-anchor="middle" fill="white" font-size="12">ML</text>
+                            <text x="600" y="155" text-anchor="middle" fill="white" font-size="12">NLP</text>
+                        </svg>
+                    </div>
+                `;
+                document.getElementById('graphInfo').textContent = 'Nodes: 15 | Edges: 23';
+                graphData = {{ nodes: 15, edges: 23 }}; // Store graph data
+            }}, 2000);
+        }}
+
+        function zoomGraph(factor) {{
+            // Placeholder zoom functionality
+            UI.showToast('Zoom functionality coming soon!', 'info');
+        }}
+
+        function fitGraph() {{
+            UI.showToast('Fit to screen coming soon!', 'info');
+        }}
+
+        function resetGraph() {{
+            if (graphData) {{
+                generateKnowledgeGraph();
+            }}
+        }}
+
+        // Placeholder functions
+        function quickView(id) {{ UI.showToast('Quick view coming soon!', 'info'); }}
+        function addToFavorites(id) {{ UI.showToast('Favorites coming soon!', 'info'); }}
+        function showItemMenu(id) {{ UI.showToast('Item menu coming soon!', 'info'); }}
+        function editKnowledge() {{ UI.showToast('Edit functionality coming soon!', 'info'); }}
+        function duplicateKnowledge() {{ UI.showToast('Duplicate functionality coming soon!', 'info'); }}
+        function shareKnowledge() {{ UI.showToast('Share functionality coming soon!', 'info'); }}
+        function deleteKnowledge() {{ UI.showToast('Delete functionality coming soon!', 'info'); }}
+        function resetAdvancedSearch() {{ document.getElementById('advancedSearchForm').reset(); }}
+    </script>
+</body>

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dashboard-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Router Phase 1</h2>
+            </div>
+            <ul class="sidebar-nav">
+                <li class="nav-item active">
+                    <a href="/dashboard" onclick="closeSidebarIfMobile()">
+                        <span class="nav-icon">📊</span>
+                        Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/chat" onclick="closeSidebarIfMobile()">
+                        <span class="nav-icon">💬</span>
+                        Chat
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/research" onclick="closeSidebarIfMobile()">
+                        <span class="nav-icon">🔬</span>
+                        Research
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/knowledge" onclick="closeSidebarIfMobile()">
+                        <span class="nav-icon">📚</span>
+                        Knowledge
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/settings" onclick="closeSidebarIfMobile()">
+                        <span class="nav-icon">⚙️</span>
+                        Settings
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header class="page-header">
+                <h1>Dashboard</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="themeToggleBtn">
+                        <span class="btn-icon">🌙</span>
+                        Dark Mode
+                    </button>
+                    <button class="btn btn-primary" id="newChatBtn">
+                        <span class="btn-icon">+</span>
+                        New Chat
+                    </button>
+                    <button class="btn btn-secondary" id="newResearchBtn">
+                        <span class="btn-icon">🔬</span>
+                        New Research
+                    </button>
+                </div>
+            </header>
+
+            <div class="dashboard-grid">
+                <div class="dashboard-card stats-card">
+                    <h3>Quick Stats</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="chatCount">0</div>
+                            <div class="stat-label">Total Chats</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="researchCount">0</div>
+                            <div class="stat-label">Research Sessions</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="knowledgeCount">0</div>
+                            <div class="stat-label">Knowledge Items</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="tokenCount">0</div>
+                            <div class="stat-label">Tokens Used</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-card recent-activity">
+                    <h3>Recent Activity</h3>
+                    <div class="activity-list" id="recentActivity">
+                        <div class="activity-item loading">
+                            <div class="activity-icon">⏳</div>
+                            <div class="activity-content">
+                                <div class="activity-title">Loading activity...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-card quick-actions">
+                    <h3>Quick Actions</h3>
+                    <div class="action-buttons">
+                        <button class="action-btn" onclick="startChat()">
+                            <span class="action-icon">💬</span>
+                            <span class="action-text">Start Chat</span>
+                        </button>
+                        <button class="action-btn" onclick="startResearch()">
+                            <span class="action-icon">🔬</span>
+                            <span class="action-text">Begin Research</span>
+                        </button>
+                        <button class="action-btn" onclick="addKnowledge()">
+                            <span class="action-icon">📚</span>
+                            <span class="action-text">Add Knowledge</span>
+                        </button>
+                        <button class="action-btn" onclick="viewSettings()">
+                            <span class="action-icon">⚙️</span>
+                            <span class="action-text">Settings</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="dashboard-card active-research">
+                    <h3>Active Research</h3>
+                    <div class="research-list" id="activeResearch">
+                        <div class="no-research">
+                            <span class="no-research-icon">🔬</span>
+                            <p>No active research sessions</p>
+                            <button class="btn btn-primary btn-sm" onclick="startResearch()">Start Research</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Dashboard functionality
+        document.addEventListener('DOMContentLoaded', function() {{
+            loadDashboardData();
+            setupEventListeners();
+        }});
+
+        function setupEventListeners() {{
+            document.getElementById('newChatBtn').addEventListener('click', startChat);
+            document.getElementById('newResearchBtn').addEventListener('click', startResearch);
+            document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
+        }}
+
+        async function loadDashboardData() {{
+            const token = localStorage.getItem('accessToken');
+            if (!token) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            try {{
+                // Load stats
+                const statsResponse = await fetch('/api/dashboard/stats', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+                if (statsResponse.ok) {{
+                    const stats = await statsResponse.json();
+                    updateStats(stats);
+                }}
+
+                // Load recent activity
+                const activityResponse = await fetch('/api/dashboard/activity', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+                if (activityResponse.ok) {{
+                    const activity = await activityResponse.json();
+                    updateActivity(activity);
+                }}
+
+                // Load active research
+                const researchResponse = await fetch('/api/research/sessions', {{
+                    headers: {{ 'Authorization': `Bearer ${{token}}` }}
+                }});
+                if (researchResponse.ok) {{
+                    const research = await researchResponse.json();
+                    updateActiveResearch(research.sessions || []);
+                }}
+
+            }} catch (error) {{
+                console.error('Failed to load dashboard data:', error);
+            }}
+        }}
+
+        function updateStats(stats) {{
+            document.getElementById('chatCount').textContent = stats.chats || 0;
+            document.getElementById('researchCount').textContent = stats.research || 0;
+            document.getElementById('knowledgeCount').textContent = stats.knowledge || 0;
+            document.getElementById('tokenCount').textContent = stats.tokens || 0;
+        }}
+
+        function updateActivity(activities) {{
+            const container = document.getElementById('recentActivity');
+            container.innerHTML = '';
+
+            if (activities.length === 0) {{
+                container.innerHTML = '<div class="no-activity">No recent activity</div>';
+                return;
+            }}
+
+            activities.forEach(activity => {{
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                item.innerHTML = `
+                    <div class="activity-icon">${{getActivityIcon(activity.type)}}</div>
+                    <div class="activity-content">
+                        <div class="activity-title">${{activity.title}}</div>
+                        <div class="activity-time">${{formatTime(activity.timestamp)}}</div>
+                    </div>
+                `;
+                container.appendChild(item);
+            }});
+        }}
+
+        function updateActiveResearch(sessions) {{
+            const container = document.getElementById('activeResearch');
+            const activeSessions = sessions.filter(s => s.status === 'running' || s.status === 'in_progress');
+
+            if (activeSessions.length === 0) return;
+
+            container.innerHTML = '';
+            activeSessions.forEach(session => {{
+                const item = document.createElement('div');
+                item.className = 'research-item';
+                item.innerHTML = `
+                    <div class="research-title">${{session.query}}</div>
+                    <div class="research-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${{session.progress || 0}}%"></div>
+                        </div>
+                        <span class="progress-text">${{session.status}}</span>
+                    </div>
+                `;
+                container.appendChild(item);
+            }});
+        }}
+
+        function getActivityIcon(type) {{
+            const icons = {{
+                'chat': '💬',
+                'research': '🔬',
+                'knowledge': '📚',
+                'settings': '⚙️'
+            }};
+            return icons[type] || '📝';
+        }}
+
+        function formatTime(timestamp) {{
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            const minutes = Math.floor(diff / 60000);
+
+            if (minutes < 1) return 'Just now';
+            if (minutes < 60) return `${{minutes}}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${{hours}}h ago`;
+            return date.toLocaleDateString();
+        }}
+
+        function startChat() {{
+            window.location.href = '/chat';
+        }}
+
+        function startResearch() {{
+            window.location.href = '/research';
+        }}
+
+        function addKnowledge() {{
+            window.location.href = '/knowledge';
+        }}
+
+        function viewSettings() {{
+            window.location.href = '/settings';
+        }}
+
+        function closeSidebarIfMobile() {{
+            // Close sidebar on mobile after navigation
+            if (window.innerWidth <= 768) {{
+                const sidebar = document.querySelector('.sidebar');
+                if (sidebar && !sidebar.classList.contains('collapsed')) {{
+                    sidebar.classList.add('collapsed');
+                }}
+            }}
+        }}
+
+        function toggleTheme() {{
+            const body = document.body;
+            const btn = document.getElementById('themeToggleBtn');
+            const icon = btn.querySelector('.btn-icon');
+
+            if (body.classList.contains('dark-theme')) {{
+                body.classList.remove('dark-theme');
+                icon.textContent = '🌙';
+                btn.innerHTML = '<span class="btn-icon">🌙</span> Dark Mode';
+                localStorage.setItem('theme', 'light');
+            }} else {{
+                body.classList.add('dark-theme');
+                icon.textContent = '☀️';
+                btn.innerHTML = '<span class="btn-icon">☀️</span> Light Mode';
+                localStorage.setItem('theme', 'dark');
+            }}
+        }}
+
+        // Load saved theme
+        document.addEventListener('DOMContentLoaded', function() {{
+            loadDashboardData();
+            setupEventListeners();
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {{
+                document.body.classList.add('dark-theme');
+                const btn = document.getElementById('themeToggleBtn');
+                btn.innerHTML = '<span class="btn-icon">☀️</span> Light Mode';
+            }}
+        }});
+    </script>
+</body>
+</html>

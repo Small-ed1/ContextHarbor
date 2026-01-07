@@ -1,13 +1,12 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
-
-import httpx
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -24,7 +23,7 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_HOST = "http://127.0.0.1:11434"
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 
 
 async def stream_ollama_chat(payload: Dict[str, Any]):
@@ -33,9 +32,7 @@ async def stream_ollama_chat(payload: Dict[str, Any]):
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             async with client.stream(
-                "POST",
-                f"{OLLAMA_HOST}/api/chat",
-                json=payload
+                "POST", f"{OLLAMA_HOST}/api/chat", json=payload
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
@@ -72,6 +69,7 @@ class ChatRequest(BaseModel):
             raise ValueError("Message cannot be empty")
         # Basic sanitization: remove excessive whitespace, limit length
         import re
+
         v = re.sub(r"\s+", " ", v.strip())
         if len(v) > 10000:
             raise ValueError("Message too long (max 10000 characters)")
@@ -150,7 +148,10 @@ async def api_chat(req: ChatRequest):
                 progress = status.get("progress", {})
                 findings_count = progress.get("findings_count", 0)
                 return {
-                    "response": f"Research completed successfully. Found {findings_count} key findings across {len(status.get('topics', []))} topics.",
+                    "response": (
+                        f"Research completed successfully. Found {findings_count} key "
+                        f"findings across {len(status.get('topics', []))} topics."
+                    ),
                     "research_id": plan_id,
                     "findings_count": findings_count,
                 }
@@ -182,6 +183,7 @@ async def api_chat(req: ChatRequest):
         else:
             # Direct Ollama chat for better control and simpler responses
             import httpx
+
             model = req.model or "llama3.2:latest"
             temperature = req.temperature or 0.7
             logger.info(f"Processing direct chat with Ollama model {model}")
@@ -198,27 +200,27 @@ async def api_chat(req: ChatRequest):
                 "stream": False,
                 "options": {
                     "temperature": temperature,
-                    "num_ctx": req.contextTokens or 8000
-                }
+                    "num_ctx": req.contextTokens or 8000,
+                },
             }
 
             try:
                 if req.stream:
                     # Streaming response
                     return StreamingResponse(
-                        stream_ollama_chat(payload),
-                        media_type="text/plain"
+                        stream_ollama_chat(payload), media_type="text/plain"
                     )
                 else:
                     # Regular response
                     async with httpx.AsyncClient(timeout=60.0) as client:
                         response = await client.post(
-                            f"{OLLAMA_HOST}/api/chat",
-                            json=payload
+                            f"{OLLAMA_HOST}/api/chat", json=payload
                         )
                         response.raise_for_status()
                         data = response.json()
-                        result = data.get("message", {}).get("content", "No response from model")
+                        result = data.get("message", {}).get(
+                            "content", "No response from model"
+                        )
             except Exception as e:
                 logger.error(f"Ollama chat error: {e}")
                 raise HTTPException(status_code=500, detail=f"Ollama error: {str(e)}")
@@ -255,5 +257,5 @@ async def health():
         "status": "ok",
         "ollama": ollama_status,
         "available_models": model_count,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }

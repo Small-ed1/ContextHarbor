@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chat - Router Phase 1</title>
+    <link rel="stylesheet" href="/static/css/modern.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="chat-page">
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-toggle" id="sidebarToggle">☰</div>
+                <h2>Chats</h2>
+                <button class="btn btn-primary btn-sm" id="newChatBtn">+ New</button>
+            </div>
+            <div class="chat-list" id="chatList">
+                <div class="chat-list-loading">Loading chats...</div>
+            </div>
+        </nav>
+
+        <main class="main-content">
+            <div class="chat-header">
+                <div class="header-left">
+                    <button class="btn btn-secondary" id="themeToggleBtn">
+                        <span class="btn-icon">🌙</span>
+                        Dark Mode
+                    </button>
+                </div>
+                <div class="chat-title">
+                    <h1 id="currentChatTitle" contenteditable="true" onblur="renameChat()">Select a chat or start new</h1>
+                </div>
+                <div class="chat-actions">
+                    <button class="btn btn-secondary" id="archiveChatBtn">📦 Archive</button>
+                    <button class="btn btn-secondary" id="shareChatBtn">📤 Share</button>
+                    <button class="btn btn-secondary" id="exportChatBtn">💾 Export</button>
+                    <button class="btn btn-danger" id="deleteChatBtn">🗑️ Delete</button>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="messagesContainer">
+                <div class="welcome-message">
+                    <div class="welcome-content">
+                        <h2>Welcome to Router Phase 1 Chat</h2>
+                        <p>Start a conversation with our AI assistant. Ask questions, request research, or explore knowledge.</p>
+                        <div class="quick-prompts">
+                            <button class="prompt-btn" onclick="sendQuickPrompt('Hello! Can you help me with research?')">🤝 Get Started</button>
+                            <button class="prompt-btn" onclick="sendQuickPrompt('What can you help me with today?')">❓ What can you do?</button>
+                            <button class="prompt-btn" onclick="sendQuickPrompt('Show me some examples of your capabilities')">💡 Show Examples</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <div class="input-container">
+                    <textarea
+                        id="messageInput"
+                        placeholder="Type your message... (Shift+Enter for new line)"
+                        rows="1"
+                        maxlength="10000"
+                    ></textarea>
+                    <div class="input-actions">
+                        <button class="btn btn-secondary" id="attachBtn" title="Attach file">
+                            📎
+                        </button>
+                        <button class="btn btn-primary" id="sendBtn">
+                            <span class="send-icon">➤</span>
+                            Send
+                        </button>
+                    </div>
+                </div>
+                <div class="input-footer">
+                    <span class="char-count" id="charCount">0/10000</span>
+                    <div class="typing-indicator" id="typingIndicator" style="display: none;">
+                        <span class="typing-dot"></span>
+                        <span class="typing-dot"></span>
+                        <span class="typing-dot"></span>
+                        <span>AI is typing...</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Message Actions Modal -->
+    <div class="modal" id="messageModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Message Options</h3>
+                <button class="modal-close" onclick="closeMessageModal()">×</button>
+            </div>
+            <div class="modal-body" id="messageModalBody">
+                <!-- Message content will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple UI utilities
+        const UI = {{
+            showToast: function(message, type = 'info') {{
+                alert(`${{type.toUpperCase()}}: ${{message}}`);
+            }}
+        }};
+
+        let currentChatId = null;
+        let accessToken = localStorage.getItem('accessToken');
+        let messageHistory = [];
+
+        document.addEventListener('DOMContentLoaded', function() {{
+            if (!accessToken) {{
+                window.location.href = '/login';
+                return;
+            }}
+
+            initializeChat();
+            setupEventListeners();
+            loadChats();
+            loadTheme();
+        }});
+
+        function initializeChat() {{
+            if (currentChatId) {{
+                loadChat(currentChatId);
+            }}
+        }}
+
+        function setupEventListeners() {{
+            // Message input
+            const messageInput = document.getElementById('messageInput');
+            messageInput.addEventListener('input', updateCharCount);
+            messageInput.addEventListener('keydown', handleKeyDown);
+
+            // Send button
+            document.getElementById('sendBtn').addEventListener('click', sendMessage);
+
+            // Chat management
+            document.getElementById('newChatBtn').addEventListener('click', createNewChat);
+            document.getElementById('archiveChatBtn').addEventListener('click', archiveChat);
+            document.getElementById('shareChatBtn').addEventListener('click', shareChat);
+            document.getElementById('exportChatBtn').addEventListener('click', exportChat);
+            document.getElementById('deleteChatBtn').addEventListener('click', deleteChat);
+
+            // Theme
+            document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
+
+            // Sidebar
+            document.getElementById('sidebarToggle').addEventListener('click', toggleSidebar);
+
+            // Attach file
+            document.getElementById('attachBtn').addEventListener('click', attachFile);
+        }}
+
+        function updateCharCount() {{
+            const input = document.getElementById('messageInput');
+            const count = document.getElementById('charCount');
+            count.textContent = `${{input.value.length}}/10000`;
+        }}
+
+        function handleKeyDown(e) {{
+            if (e.key === 'Enter' && !e.shiftKey) {{
+                e.preventDefault();
+                sendMessage();
+            }}
+        }}
+
+        async function loadChats() {{
+            try {{
+                const response = await fetch('/api/chats', {{
+                    headers: {{ 'Authorization': `Bearer ${{accessToken}}` }}
+                }});
+
+                if (response.ok) {{
+                    const chats = await response.json();
+                    renderChatList(chats);
+                }}
+            }} catch (error) {{
+                console.error('Failed to load chats:', error);
+            }}
+        }}
+
+        function renderChatList(chats) {{
+            const container = document.getElementById('chatList');
+            container.innerHTML = '';
+
+            if (chats.length === 0) {{
+                container.innerHTML = '<div class="no-chats">No chats yet. Create your first chat!</div>';
+                return;
+            }}
+
+            chats.forEach(chat => {{
+                const chatItem = document.createElement('div');
+                chatItem.className = `chat-item ${{currentChatId === chat.id ? 'active' : ''}}`;
+                chatItem.onclick = () => selectChat(chat.id);
+
+                chatItem.innerHTML = `
+                    <div class="chat-item-title">${{chat.title || 'Untitled Chat'}}</div>
+                    <div class="chat-item-meta">
+                        <span class="chat-item-date">${{formatChatDate(chat.created_at)}}</span>
+                        <span class="chat-item-count">${{chat.message_count || 0}} messages</span>
+                    </div>
+                `;
+
+                container.appendChild(chatItem);
+            }});
+        }}
+
+        function formatChatDate(dateString) {{
+            const date = new Date(dateString);
+            const now = new Date();
+            const diff = now - date;
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+            if (days === 0) return 'Today';
+            if (days === 1) return 'Yesterday';
+            if (days < 7) return `${{days}} days ago`;
+            return date.toLocaleDateString();
+        }}
+
+        async function selectChat(chatId) {{
+            currentChatId = chatId;
+            await loadChat(chatId);
+
+            // Update UI
+            document.querySelectorAll('.chat-item').forEach(item => {{
+                item.classList.remove('active');
+            }});
+            event.currentTarget.classList.add('active');
+        }}
+
+        async function loadChat(chatId) {{
+            try {{
+                const response = await fetch(`/api/chats/${{chatId}}`, {{
+                    headers: {{ 'Authorization': `Bearer ${{accessToken}}` }}
+                }});
+
+                if (response.ok) {{
+                    const chat = await response.json();
+                    renderMessages(chat.messages || []);
+                    updateChatTitle(chat.title || 'Untitled Chat');
+                    messageHistory = chat.messages || [];
+                }}
+            }} catch (error) {{
+                console.error('Failed to load chat:', error);
+            }}
+        }}
+
+        function renderMessages(messages) {{
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = '';
+
+            if (messages.length === 0) {{
+                container.innerHTML = `
+                    <div class="welcome-message">
+                        <div class="welcome-content">
+                            <h2>Welcome to Router Phase 1 Chat</h2>
+                            <p>Start a conversation with our AI assistant. Ask questions, request research, or explore knowledge.</p>
+                            <div class="quick-prompts">
+                                <button class="prompt-btn" onclick="sendQuickPrompt('Hello! Can you help me with research?')">🤝 Get Started</button>
+                                <button class="prompt-btn" onclick="sendQuickPrompt('What can you help me with today?')">❓ What can you do?</button>
+                                <button class="prompt-btn" onclick="sendQuickPrompt('Show me some examples of your capabilities')">💡 Show Examples</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }}
+
+            messages.forEach((message, index) => {{
+                const messageEl = createMessageElement(message, index);
+                container.appendChild(messageEl);
+            }});
+
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }}
+
+        function createMessageElement(message, index) {{
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${{message.role}}`;
+            messageDiv.dataset.messageId = index;
+
+            messageDiv.innerHTML = `
+                <div class="message-avatar">
+                    ${{message.role === 'user' ? '👤' : '🤖'}}
+                </div>
+                <div class="message-content">
+                    <div class="message-text">${{formatMessageText(message.content)}}</div>
+                    <div class="message-meta">
+                        <span class="message-time">${{formatMessageTime(message.timestamp)}}</span>
+                        ${{message.token_count ? `<span class="token-count">${{message.token_count}} tokens</span>` : ''}}
+                        <button class="message-actions-btn" onclick="showMessageActions(${{index}})">⋯</button>
+                    </div>
+                </div>
+            `;
+
+            return messageDiv;
+        }}
+
+        function formatMessageText(text) {{
+            // Basic markdown-like formatting
+            return text
+                .replace(/\\n/g, '<br>')
+                .replace(/```([\\s\\S]*?)```/g, '<pre><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\\*\\*([^\\*\\*]+)\\*\\*/g, '<strong>$1</strong>')
+                .replace(/\\*([^\\*]+)\\*/g, '<em>$1</em>');
+        }}
+
+        function formatMessageTime(timestamp) {{
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString([], {{hour: '2-digit', minute:'2-digit'}});
+        }}
+
+        async function sendMessage() {{
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // Create chat if none exists
+            if (!currentChatId) {{
+                await createNewChat();
+            }}
+
+            // Add user message to UI
+            const userMessage = {{
+                role: 'user',
+                content: message,
+                timestamp: new Date().toISOString()
+            }};
+
+            messageHistory.push(userMessage);
+            renderMessages(messageHistory);
+            input.value = '';
+
+            // Show typing indicator
+            showTypingIndicator();
+
+            try {{
+                const response = await fetch('/api/chat', {{
+                    method: 'POST',
+                    headers: {{
+                        'Authorization': `Bearer ${{accessToken}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify({{
+                        message: message,
+                        chat_id: currentChatId,
+                        history: messageHistory.slice(-10) // Last 10 messages for context
+                    }})
+                }});
+
+                hideTypingIndicator();
+
+                if (response.ok) {{
+                    const result = await response.json();
+
+                    const aiMessage = {{
+                        role: 'assistant',
+                        content: result.response,
+                        timestamp: new Date().toISOString(),
+                        token_count: result.token_count
+                    }};
+
+                    messageHistory.push(aiMessage);
+                    renderMessages(messageHistory);
+
+                    // Save to chat
+                    await saveMessageToChat(currentChatId, userMessage);
+                    await saveMessageToChat(currentChatId, aiMessage);
+
+                }} else {{
+                    const error = await response.json();
+                    alert('Chat error: ' + (error.error || 'Unknown error'));
+                }}
+
+            }} catch (error) {{
+                hideTypingIndicator();
+                alert('Network error: ' + error.message);
+            }}
+        }}
+
+        function showTypingIndicator() {{
+            document.getElementById('typingIndicator').style.display = 'flex';
+        }}
+
+        function hideTypingIndicator() {{
+            document.getElementById('typingIndicator').style.display = 'none';
+        }}
+
+        async function createNewChat() {{
+            try {{
+                const response = await fetch('/api/chats', {{
+                    method: 'POST',
+                    headers: {{ 'Authorization': `Bearer ${{accessToken}}` }}
+                }});
+
+                if (response.ok) {{
+                    const result = await response.json();
+                    currentChatId = result.id;
+                    messageHistory = [];
+                    renderMessages([]);
+                    updateChatTitle('New Chat');
+                    loadChats(); // Refresh chat list
+                }}
+            }} catch (error) {{
+                console.error('Failed to create chat:', error);
+            }}
+        }}
+
+        function updateChatTitle(title) {{
+            document.getElementById('currentChatTitle').textContent = title;
+        }}
+
+        async function saveMessageToChat(chatId, message) {{
+            try {{
+                await fetch(`/api/chats/${{chatId}}/messages`, {{
+                    method: 'POST',
+                    headers: {{
+                        'Authorization': `Bearer ${{accessToken}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(message)
+                }});
+            }} catch (error) {{
+                console.error('Failed to save message:', error);
+            }}
+        }}
+
+        function sendQuickPrompt(prompt) {{
+            document.getElementById('messageInput').value = prompt;
+            sendMessage();
+        }}
+
+        function shareChat() {{
+            if (!currentChatId) return;
+            const url = `${{window.location.origin}}/chat?share=${{currentChatId}}`;
+            navigator.clipboard.writeText(url);
+            alert('Chat link copied to clipboard!');
+        }}
+
+        function exportChat() {{
+            if (!messageHistory.length) return;
+            const data = JSON.stringify(messageHistory, null, 2);
+            const blob = new Blob([data], {{type: 'application/json'}});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chat-${{currentChatId || 'export'}}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }}
+
+        async function deleteChat() {{
+            if (!currentChatId) return;
+            if (!confirm('Are you sure you want to delete this chat?')) return;
+
+            try {{
+                const response = await fetch(`/api/chats/${{currentChatId}}`, {{
+                    method: 'DELETE',
+                    headers: {{ 'Authorization': `Bearer ${{accessToken}}` }}
+                }});
+
+                if (response.ok) {{
+                    currentChatId = null;
+                    messageHistory = [];
+                    renderMessages([]);
+                    updateChatTitle('Select a chat or start new');
+                    loadChats();
+                }}
+            }} catch (error) {{
+                console.error('Failed to delete chat:', error);
+            }}
+        }}
+
+        function toggleSidebar() {{
+            const sidebar = document.querySelector('.sidebar');
+            sidebar.classList.toggle('collapsed');
+        }}
+
+        function attachFile() {{
+            // Placeholder for file attachment
+            alert('File attachment coming soon!');
+        }}
+
+        function showMessageActions(messageIndex) {{
+            const message = messageHistory[messageIndex];
+            if (!message) return;
+
+            const modal = document.getElementById('messageModal');
+            const body = document.getElementById('messageModalBody');
+
+            body.innerHTML = `
+                <div class="message-preview">
+                    <strong>${{message.role === 'user' ? 'You' : 'AI'}}:</strong>
+                    <p>${{message.content.substring(0, 200)}}${message.content.length > 200 ? '...' : ''}</p>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="copyMessage(${{messageIndex}})">Copy</button>
+                    <button class="btn btn-secondary" onclick="editMessage(${{messageIndex}})">Edit</button>
+                    <button class="btn btn-danger" onclick="deleteMessage(${{messageIndex}})">Delete</button>
+                </div>
+            `;
+
+            modal.style.display = 'block';
+        }}
+
+        function closeMessageModal() {{
+            document.getElementById('messageModal').style.display = 'none';
+        }}
+
+        function copyMessage(index) {{
+            const message = messageHistory[index];
+            navigator.clipboard.writeText(message.content);
+            closeMessageModal();
+        }}
+
+        function editMessage(index) {{
+            // Placeholder
+            alert('Edit message coming soon!');
+            closeMessageModal();
+        }}
+
+        function deleteMessage(index) {{
+            // Placeholder
+            alert('Delete message coming soon!');
+            closeMessageModal();
+        }}
+
+        async function archiveChat() {{
+            if (!currentChatId) return;
+            if (!confirm('Are you sure you want to archive this chat?')) return;
+
+            try {{
+                await fetch(`/api/chats/${{currentChatId}}/archive`, {{
+                    method: 'POST',
+                    headers: {{ 'Authorization': `Bearer ${{accessToken}}` }}
+                }});
+                UI.showToast('Chat archived', 'success');
+                loadChats(); // Refresh list
+            }} catch (error) {{
+                UI.showToast('Failed to archive chat', 'error');
+            }}
+        }}
+
+        async function renameChat() {{
+            if (!currentChatId) return;
+
+            const titleElement = document.getElementById('currentChatTitle');
+            const newTitle = titleElement.textContent.trim();
+
+            if (!newTitle || newTitle === 'Select a chat or start new') return;
+
+            try {{
+                await fetch(`/api/chats/${{currentChatId}}`, {{
+                    method: 'PUT',
+                    headers: {{
+                        'Authorization': `Bearer ${{accessToken}}`,
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify({{ name: newTitle }})
+                }});
+                loadChats(); // Refresh list with new title
+            }} catch (error) {{
+                console.error('Failed to rename chat:', error);
+            }}
+        }}
+
+        function toggleTheme() {{
+            const body = document.body;
+            const btn = document.getElementById('themeToggleBtn');
+            const icon = btn.querySelector('.btn-icon');
+
+            if (body.classList.contains('dark-theme')) {{
+                body.classList.remove('dark-theme');
+                icon.textContent = '🌙';
+                btn.innerHTML = '<span class="btn-icon">🌙</span> Dark Mode';
+                localStorage.setItem('theme', 'light');
+            }} else {{
+                body.classList.add('dark-theme');
+                icon.textContent = '☀️';
+                btn.innerHTML = '<span class="btn-icon">☀️</span> Light Mode';
+                localStorage.setItem('theme', 'dark');
+            }}
+        }}
+
+        function loadTheme() {{
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {{
+                document.body.classList.add('dark-theme');
+                const btn = document.getElementById('themeToggleBtn');
+                btn.innerHTML = '<span class="btn-icon">☀️</span> Light Mode';
+            }}
+        }}
+    </script>
+</body>
+</html>

@@ -1,9 +1,11 @@
+import asyncio
+import os
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Optional
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
-import os
-from typing import List, Optional
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
+
 
 class EmbeddingService:
     def __init__(self, model_name: str = "nomic-embed-text"):
@@ -15,7 +17,9 @@ class EmbeddingService:
         """Load the embedding model asynchronously"""
         if self.model is None:
             loop = asyncio.get_event_loop()
-            self.model = await loop.run_in_executor(self.executor, self._load_model_sync)
+            self.model = await loop.run_in_executor(
+                self.executor, self._load_model_sync
+            )
 
     def _load_model_sync(self):
         """Load model synchronously"""
@@ -32,7 +36,7 @@ class EmbeddingService:
         loop = asyncio.get_event_loop()
         embeddings = await loop.run_in_executor(
             self.executor,
-            lambda: self.model.encode(texts, convert_to_numpy=True).tolist()
+            lambda: self.model.encode(texts, convert_to_numpy=True).tolist(),
         )
         return embeddings
 
@@ -47,9 +51,12 @@ class EmbeddingService:
         b = np.array(vec2)
         return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
+
 # Ollama embedding alternative (for when local models are preferred)
 class OllamaEmbeddingService:
-    def __init__(self, host: str = "http://127.0.0.1:11434", model: str = "nomic-embed-text"):
+    def __init__(
+        self, host: str = "http://127.0.0.1:11434", model: str = "nomic-embed-text"
+    ):
         self.host = host.rstrip("/")
         self.model = model
         self.client = None
@@ -63,7 +70,7 @@ class OllamaEmbeddingService:
             for text in texts:
                 response = await client.post(
                     f"{self.host}/api/embeddings",
-                    json={"model": self.model, "prompt": text}
+                    json={"model": self.model, "prompt": text},
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -75,6 +82,7 @@ class OllamaEmbeddingService:
     async def encode_text(self, text: str) -> List[float]:
         embeddings = await self.encode_texts([text])
         return embeddings[0]
+
 
 # Global instance
 embedding_service = EmbeddingService()

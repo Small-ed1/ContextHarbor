@@ -10,27 +10,18 @@ import asyncio
 import json
 import logging
 import os
-import shutil
-import threading
-import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
-try:
-    import numpy as np
-
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None  # type: ignore
+import sqlite3
 
 import httpx
 from fastapi import (APIRouter, FastAPI, File, HTTPException, Request,
-                     UploadFile)
+                      UploadFile)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
-                               StreamingResponse)
+                                StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -43,44 +34,32 @@ class StatsMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# Local imports
 from . import stats
-from .chat_manager import list_chats as list_chats_func
-from .chat_manager import create_chat as create_chat_func
-from .chat_manager import get_chat as get_chat_func
-from .chat_manager import update_chat as update_chat_func
-from .chat_manager import delete_chat as delete_chat_func
-from .chat_manager import archive_chat as archive_chat_func
-from .chat_manager import add_message as add_message_func
 from .auth import AuthManager, auth_manager
-from .memory_manager import load_memories
-from .memory_manager import save_memories
+from .chat_manager import add_message as add_message_func
+from .chat_manager import archive_chat as archive_chat_func
+from .chat_manager import create_chat as create_chat_func
+from .chat_manager import delete_chat as delete_chat_func
+from .chat_manager import get_chat as get_chat_func
+from .chat_manager import list_chats as list_chats_func
+from .chat_manager import update_chat as update_chat_func
+from .config_manager import load_config, save_config
+from .database import db
+from .memory_manager import load_memories, save_memories
 from .model_manager import get_all_models
-# Research functions
-from .research_manager import get_research_status
-from .research_manager import start_research
-from .research_manager import stop_research
-from .research_manager import list_research_sessions
-from .research_manager import resume_research_session
-from .research_manager import delete_research_session
-from .research_manager import get_agent_status
-from .research_manager import research_progress
-from .config_manager import load_config
-from .config_manager import save_config
 from .rag_service import rag_service
+# Research functions
+from .research_manager import (delete_research_session, get_agent_status,
+                                get_research_status, list_research_sessions,
+                                research_progress, resume_research_session,
+                                start_research, stop_research)
 from .routes.chat import router as chat_router
-
-# Document Q&A imports - temporarily disabled for basic server startup
-# try:
-#     from utils.document_processor import DocumentProcessingPipeline, DocumentMetadata
-#     from utils.embedding_service import EmbeddingService, DocumentEmbeddingService, EmbeddingConfig
-#     from utils.vector_store import VectorStoreManager, VectorStoreConfig
-#     DOCUMENT_PROCESSING_AVAILABLE = True
-# except ImportError:
-DOCUMENT_PROCESSING_AVAILABLE = False
 
 APP_TITLE = "Router Phase 1 - Ollama Integrated"
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:1b")
+STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title=APP_TITLE)
 
@@ -96,7 +75,7 @@ async def startup_event():
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify allowed origins
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # Specify allowed origins for security
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,7 +84,14 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('logs/app.log', mode='a')
+    ]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -129,12 +115,12 @@ class ResearchRequest(BaseModel):
 
 
 @app.get("/")
-def home():
-    return FileResponse("backend/static/index.html")
+def home() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.post("/api/opencode/test")
-async def test_opencode_connection(request: dict[str, str]):
+async def test_opencode_connection(request: Dict[str, str]) -> Dict[str, Any]:
     """Test opencode.ai API connection"""
     try:
         api_key = request.get("apiKey")
@@ -156,27 +142,28 @@ async def test_opencode_connection(request: dict[str, str]):
                 return {"success": False, "error": f"HTTP {response.status_code}"}
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.error(f"Test opencode connection failed: {e}")
+        return {"success": False, "error": "Connection test failed"}
 
 
 @app.get("/api/settings")
-def get_settings():
+def get_settings() -> Dict[str, Any]:
     return load_config()
 
 
 @app.post("/api/settings")
-def save_settings(data: dict):
+def save_settings(data: Dict[str, Any]) -> Dict[str, str]:
     save_config(data)
     return {"status": "ok"}
 
 
 @app.get("/api/memories")
-def get_memories():
+def get_memories() -> List[Dict[str, Any]]:
     return load_memories()
 
 
 @app.post("/api/memories")
-def add_memory(data: dict):
+def add_memory(data: Dict[str, Any]) -> Dict[str, str]:
     memories = load_memories()
     key = data.get("key", "")
     value = data.get("value", "")
@@ -188,7 +175,7 @@ def add_memory(data: dict):
 
 
 @app.delete("/api/memories/{key}")
-def delete_memory(key: str):
+def delete_memory(key: str) -> Dict[str, str]:
     memories = load_memories()
     memories = [m for m in memories if m.get("key") != key]
     save_memories(memories)
@@ -196,7 +183,7 @@ def delete_memory(key: str):
 
 
 @app.get("/api/models")
-def get_models():
+def get_models() -> Dict[str, Any]:
     logger.info("Fetching available models")
     try:
         all_models = get_all_models()
@@ -221,23 +208,22 @@ def get_models():
 
 
 @app.get("/api/chats")
-def list_chats(limit: int = 50, offset: int = 0):
+def list_chats(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
     show_archived = load_config().get("showArchived", False)
     return list_chats_func(show_archived, limit, offset)
 
 
 @app.get("/api/chats/search")
-def search_chats(q: str = "", limit: int = 50):
+def search_chats(q: str = "", limit: int = 50) -> List[Dict[str, Any]]:
     """Search chats by content using FTS."""
     if not q:
         return list_chats_func(False, limit, 0)
 
     # Search messages FTS
-    import sqlite3
-    from .database import db
     with sqlite3.connect(db.db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT DISTINCT c.id, c.name, c.created_at, c.updated_at
             FROM chats c
             JOIN messages m ON c.id = m.chat_id
@@ -246,30 +232,34 @@ def search_chats(q: str = "", limit: int = 50):
             )
             ORDER BY c.updated_at DESC
             LIMIT ?
-        """, (q, limit))
+        """,
+            (q, limit),
+        )
 
         chats = []
         for row in cursor.fetchall():
             chat_id, name, created_at, updated_at = row
-            chats.append({
-                "id": chat_id,
-                "title": name,
-                "created_at": created_at,
-                "summary": "",
-                "archived": False,
-            })
+            chats.append(
+                {
+                    "id": chat_id,
+                    "title": name,
+                    "created_at": created_at,
+                    "summary": "",
+                    "archived": False,
+                }
+            )
 
         return chats
 
 
 @app.post("/api/chats")
-def create_chat():
+def create_chat() -> Dict[str, str]:
     chat_id = create_chat_func()
     return {"id": chat_id}
 
 
 @app.get("/api/chats/{chat_id}")
-def get_chat(chat_id: str):
+def get_chat(chat_id: str) -> Dict[str, Any]:
     result = get_chat_func(chat_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
@@ -277,7 +267,7 @@ def get_chat(chat_id: str):
 
 
 @app.put("/api/chats/{chat_id}")
-def update_chat(chat_id: str, data: dict):
+def update_chat(chat_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     result = update_chat_func(chat_id, data)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
@@ -285,7 +275,7 @@ def update_chat(chat_id: str, data: dict):
 
 
 @app.delete("/api/chats/{chat_id}")
-def delete_chat(chat_id: str):
+def delete_chat(chat_id: str) -> Dict[str, str]:
     result = delete_chat_func(chat_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
@@ -293,7 +283,7 @@ def delete_chat(chat_id: str):
 
 
 @app.post("/api/chats/{chat_id}/archive")
-def archive_chat(chat_id: str):
+def archive_chat(chat_id: str) -> Dict[str, str]:
     result = archive_chat_func(chat_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
@@ -301,7 +291,7 @@ def archive_chat(chat_id: str):
 
 
 @app.post("/api/chats/{chat_id}/messages")
-async def add_message(chat_id: str, message: dict):
+async def add_message(chat_id: str, message: Dict[str, Any]) -> Dict[str, str]:
     """Add a message to a chat."""
     role = message.get("role")
     content = message.get("content")
@@ -316,14 +306,17 @@ async def add_message(chat_id: str, message: dict):
         raise HTTPException(status_code=500, detail="Failed to add message")
     return {"status": "ok"}
 
+
 @app.post("/api/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest) -> Dict[str, Any]:
     """Process a chat message with Ollama."""
     try:
         # Get chat history
         messages: list[dict[str, Any]] = []
-        if hasattr(req, 'chat_id') and req.chat_id:
+        if hasattr(req, "chat_id") and req.chat_id:
             chat_data = get_chat_func(req.chat_id)
+            if "error" in chat_data:
+                raise HTTPException(status_code=404, detail=chat_data["error"])
             if "messages" in chat_data and isinstance(chat_data["messages"], list):
                 messages = chat_data["messages"]
 
@@ -337,8 +330,8 @@ async def chat(req: ChatRequest):
                 json={
                     "model": req.model or OLLAMA_MODEL,
                     "messages": messages,
-                    "stream": False
-                }
+                    "stream": False,
+                },
             )
 
             if response.status_code == 200:
@@ -346,27 +339,28 @@ async def chat(req: ChatRequest):
                 ai_message = data["message"]["content"]
 
                 # Add AI response to chat if chat_id provided
-                if hasattr(req, 'chat_id') and req.chat_id:
-                    add_message_func(req.chat_id, "assistant", ai_message, len(ai_message.split()))
+                if hasattr(req, "chat_id") and req.chat_id:
+                    add_message_func(
+                        req.chat_id, "assistant", ai_message, len(ai_message.split())
+                    )
 
-                return {
-                    "response": ai_message,
-                    "model": req.model or OLLAMA_MODEL
-                }
+                return {"response": ai_message, "model": req.model or OLLAMA_MODEL}
             else:
                 return {"error": f"Ollama error: {response.text}"}
 
     except Exception as e:
-        return {"error": f"Chat failed: {str(e)}"}
+        logger.error(f"Chat failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # Document Q&A API endpoints
 documents_dir = Path("data/documents")
 documents_dir.mkdir(parents=True, exist_ok=True)
 
+
 # Documents API for document QA functionality
 @app.get("/api/documents")
-def get_documents():
+def get_documents() -> Dict[str, List[Dict[str, Any]]]:
     """Get list of uploaded documents for document QA"""
     # Mock endpoint - return sample documents
     return {
@@ -404,13 +398,14 @@ def get_documents():
         ]
     }
 
+
 # @app.get("/api/vector-store/health")
 # def vector_store_health():
 #     ...
 
 
 @app.post("/api/suggest_model")
-def suggest_model(data: dict):
+def suggest_model(data: Dict[str, str]) -> Dict[str, str]:
     text = data.get("text", "").lower()
     if "code" in text or "programming" in text or "python" in text:
         return {"model": "codellama"}
@@ -422,7 +417,7 @@ def suggest_model(data: dict):
 
 # Research endpoints
 @app.post("/api/research/start")
-async def start_research_endpoint(req: ResearchRequest):
+async def start_research_endpoint(req: ResearchRequest) -> Dict[str, Any]:
     stats.increment_stat("research")
     try:
         task_id = await start_research(req.topic, req.depth)
@@ -432,16 +427,18 @@ async def start_research_endpoint(req: ResearchRequest):
             "message": f"Research started on topic: {req.topic}",
         }
     except Exception as e:
-        return {"error": f"Failed to start research: {str(e)}", "status": "error"}
+        logger.error(f"Failed to start research: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start research")
 
 
 @app.get("/api/research/{task_id}/status")
-async def research_status(task_id: str):
+async def research_status(task_id: str) -> Dict[str, Any]:
     try:
         status = await get_research_status(task_id)
         return status
     except Exception as e:
-        return {"task_id": task_id, "status": "error", "progress": 0, "error": str(e)}
+        logger.error(f"Failed to get research status for {task_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get research status")
 
 
 @app.post("/api/research/{task_id}/stop")
@@ -450,7 +447,8 @@ async def stop_research_endpoint(task_id: str):
         result = await stop_research(task_id)
         return result
     except Exception as e:
-        return {"task_id": task_id, "status": "error", "error": str(e)}
+        logger.error(f"Failed to stop research {task_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to stop research")
 
 
 @app.get("/api/research/sessions")
@@ -459,7 +457,8 @@ async def list_research_sessions_endpoint():
     try:
         return await list_research_sessions()
     except Exception as e:
-        return {"sessions": [], "error": str(e)}
+        logger.error(f"Failed to list research sessions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list research sessions")
 
 
 @app.post("/api/research/{task_id}/resume")
@@ -469,7 +468,8 @@ async def resume_research_session_endpoint(task_id: str):
         result = await resume_research_session(task_id)
         return result
     except Exception as e:
-        return {"task_id": task_id, "status": "error", "error": str(e)}
+        logger.error(f"Failed to resume research session {task_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to resume research session")
 
 
 @app.delete("/api/research/{task_id}")
@@ -479,7 +479,8 @@ async def delete_research_session_endpoint(task_id: str):
         result = delete_research_session(task_id)
         return result
     except Exception as e:
-        return {"task_id": task_id, "status": "error", "error": str(e)}
+        logger.error(f"Failed to delete research session {task_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete research session")
 
 
 @app.get("/api/agents/status")
@@ -488,16 +489,12 @@ def get_agent_status_endpoint():
     try:
         return get_agent_status()
     except Exception as e:
-        return {
-            "status": "error",
-            "active_sessions": 0,
-            "agents": [],
-            "error": str(e)
-        }
+        logger.error(f"Failed to get agent status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get agent status")
 
 
 @app.get("/api/research/{task_id}/progress")
-async def research_progress_endpoint(task_id: str):
+async def research_progress_endpoint(task_id: str) -> StreamingResponse:
     """Stream real-time research progress using Server-Sent Events."""
     try:
 
@@ -517,7 +514,7 @@ async def research_progress_endpoint(task_id: str):
         )
 
     except Exception as e:
-        return {"error": f"Failed to subscribe to progress: {str(e)}"}
+        raise HTTPException(status_code=500, detail=f"Failed to subscribe to progress: {str(e)}")
 
 
 # Authentication endpoints
@@ -525,16 +522,24 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+
 class RegisterRequest(BaseModel):
     username: str
     password: str
+
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+
 @app.post("/api/auth/register", response_model=TokenResponse)
-async def register(request: RegisterRequest):
+async def register(request: RegisterRequest) -> TokenResponse:
+    try:
+        auth_manager.validate_password_strength(request.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     user_id = auth_manager.create_user(request.username, request.password)
     if not user_id:
         raise HTTPException(status_code=400, detail="Username already exists")
@@ -543,49 +548,86 @@ async def register(request: RegisterRequest):
     if not user:
         raise HTTPException(status_code=500, detail="Registration failed")
 
-    access_token = auth_manager.create_access_token({"sub": user["username"], "user_id": user["id"]})
+    access_token = auth_manager.create_access_token(
+        {"sub": user["username"], "user_id": user["id"]}
+    )
     return TokenResponse(access_token=access_token)
 
+
 @app.post("/api/auth/login", response_model=TokenResponse)
-async def login(request: LoginRequest):
+async def login(request: LoginRequest) -> TokenResponse:
     user = auth_manager.authenticate_user(request.username, request.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access_token = auth_manager.create_access_token({"sub": user["username"], "user_id": user["id"]})
+    access_token = auth_manager.create_access_token(
+        {"sub": user["username"], "user_id": user["id"]}
+    )
     return TokenResponse(access_token=access_token)
 
+
 @app.get("/api/auth/me")
-async def get_current_user(request: Request):
+async def get_current_user(request: Request) -> Dict[str, Any]:
     # Simple auth check - in production use proper JWT
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token required")
 
-    token = auth_header.split(" ")[1]
+    try:
+        token = auth_header.split(" ")[1]
+    except IndexError:
+        raise HTTPException(status_code=401, detail="Invalid token format")
+
     user = auth_manager.verify_token(token)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
 
     return user
 
+
 @app.get("/api/v1/health")
-def health():
-    return {"status": "ok", "version": "1.0", "uptime": "unknown"}
+def health() -> Dict[str, Any]:
+    import psutil
+    import time
+    import sqlite3
+
+    # Basic health check
+    db_healthy = True
+    try:
+        with sqlite3.connect(db.db_path) as conn:
+            conn.execute("SELECT 1")
+    except Exception:
+        db_healthy = False
+
+    return {
+        "status": "ok" if db_healthy else "degraded",
+        "version": "1.0",
+        "timestamp": int(time.time()),
+        "services": {
+            "database": "healthy" if db_healthy else "unhealthy",
+            "ollama": "unknown"  # Could check with ping
+        },
+        "system": {
+            "cpu_percent": psutil.cpu_percent(),
+            "memory_percent": psutil.virtual_memory().percent,
+            "disk_percent": psutil.disk_usage('/').percent
+        }
+    }
 
 
 @app.get("/api/v1/stats")
-def get_stats():
+def get_stats() -> Dict[str, Any]:
     return stats.get_stats()
 
 
 # RAG endpoints
 @app.get("/api/rag/knowledge")
-async def get_knowledge():
+async def get_knowledge() -> Any:
     return rag_service.export_knowledge()
 
+
 @app.post("/api/rag/knowledge")
-async def add_knowledge(data: dict):
+async def add_knowledge(data: Dict[str, Any]) -> Dict[str, Any]:
     content = data.get("content")
     source = data.get("source", "")
     if not content:
@@ -593,8 +635,9 @@ async def add_knowledge(data: dict):
     knowledge_id = await rag_service.add_knowledge(content, source)
     return {"id": knowledge_id}
 
+
 @app.post("/api/rag/maintenance")
-async def run_maintenance():
+async def run_maintenance() -> Dict[str, str]:
     # Placeholder for maintenance
     return {"status": "maintenance completed"}
 

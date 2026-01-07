@@ -1,0 +1,14 @@
+[Unit]
+Description=Router Phase 1 Automated Backup
+After=network.target
+
+[Service]
+Type=oneshot
+User=small_ed
+WorkingDirectory=/home/small_ed/router_phase1
+ExecStart=/home/small_ed/router_phase1/venv/bin/python /home/small_ed/router_phase1/scripts/backup.py
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
