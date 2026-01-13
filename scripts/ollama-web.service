@@ -1,0 +1,18 @@
+[Unit]
+Description=Ollama Web FastAPI Server
+After=network.target
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=small_ed
+WorkingDirectory=/home/small_ed/router_phase1
+Environment="PATH=/home/small_ed/router_phase1/venv/bin:/usr/bin:/bin"
+ExecStart=/home/small_ed/router_phase1/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/small_ed/router_phase1/fastapi.log
+StandardError=append:/home/small_ed/router_phase1/fastapi.log
+
+[Install]
+WantedBy=multi-user.target
