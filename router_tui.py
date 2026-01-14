@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Router Phase 1 - Terminal User Interface (TUI)
+CogniHub - Terminal User Interface (TUI)
 Full-featured CLI/TUI with same functionality as web GUI.
 """
 
