@@ -1167,15 +1167,26 @@ async function selectChat(chatId){
   currentChatId = chatId;
   localStorage.setItem("currentChatId", chatId);
 
-  const j = await api(`/api/chats/${chatId}`);
-  state.messages = (j.messages || []).map(m => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    ts: fmtTsFromEpoch(m.created_at),
-    model: m.model || "",
-    meta: m.meta_json || null
-  }));
+  try {
+    const j = await api(`/api/chats/${chatId}`);
+    state.messages = (j.messages || []).map(m => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      ts: fmtTsFromEpoch(m.created_at),
+      model: m.model || "",
+      meta: m.meta_json || null
+    }));
+  } catch (e) {
+    if (e.message.includes("404") || e.message.includes("chat not found")) {
+      // Chat doesn't exist, create new one
+      currentChatId = null;
+      localStorage.removeItem("currentChatId");
+      await ensureChatSelected();
+      return;
+    }
+    throw e;
+  }
 
   await loadPrefs();
   renderChat();

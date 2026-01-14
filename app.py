@@ -199,6 +199,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def root():
+    return FileResponse("static/showcase.html")
+
+@app.get("/dashboard")
+async def dashboard():
     return FileResponse("static/index.html")
 
 @app.get("/health")
@@ -363,9 +367,12 @@ async def api_create_chat(req: ChatCreateReq):
 
 @app.get("/api/chats/{chat_id}")
 async def api_get_chat(chat_id: str, limit: int = 2000, offset: int = 0):
-    limit = max(1, min(limit, 5000))
-    offset = max(0, offset)
-    return chatstore.get_chat(chat_id, limit=limit, offset=offset)
+    try:
+        limit = max(1, min(limit, 5000))
+        offset = max(0, offset)
+        return chatstore.get_chat(chat_id, limit=limit, offset=offset)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="chat not found")
 
 @app.patch("/api/chats/{chat_id}")
 async def api_patch_chat(chat_id: str, req: ChatPatchReq):

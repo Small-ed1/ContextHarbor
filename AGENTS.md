@@ -11,6 +11,15 @@ pip install -r requirements.txt
 # Run development server (FastAPI + Uvicorn)
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
+# Install systemd service for auto-start at boot
+sudo cp systemd/cognihub.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable cognihub
+sudo systemctl start cognihub
+
+# Check service status
+sudo systemctl status cognihub
+
 # Run TUI
 python3 router_tui.py
 
@@ -26,6 +35,8 @@ curl http://localhost:8000/api/status
 
 ## Service Endpoints
 
+- **Showcase/Home Page**: http://localhost:8000
+- **Full Dashboard**: http://localhost:8000/dashboard
 - **Backend API**: http://localhost:8000
 - **Ollama API**: http://localhost:11434 (must be running separately)
 
