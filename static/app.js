@@ -145,6 +145,7 @@ const DEFAULT_UI = {
   uiChatWidth: "comfortable",
   uiCodeWrap: "nowrap",
   uiReduceMotion: false,
+  visualTheme: "deep-ocean",
 
   chatShowTimestamps: false,
   chatAutoScroll: true,
@@ -171,6 +172,7 @@ function readUIState(){
   s.uiChatWidth= pick("uiChatWidth") || s.uiChatWidth;
   s.uiCodeWrap = pick("uiCodeWrap") || s.uiCodeWrap;
   s.uiReduceMotion = chk("uiReduceMotion");
+  s.visualTheme = pick("visualTheme") || s.visualTheme;
 
   s.chatShowTimestamps = chk("chatShowTimestamps");
   s.chatAutoScroll = chk("chatAutoScroll");
@@ -202,6 +204,7 @@ function writeUIState(s){
   setVal("uiChatWidth", s.uiChatWidth);
   setVal("uiCodeWrap", s.uiCodeWrap);
   setChk("uiReduceMotion", s.uiReduceMotion);
+  setVal("visualTheme", s.visualTheme);
 
   setChk("chatShowTimestamps", s.chatShowTimestamps);
   setChk("chatAutoScroll", s.chatAutoScroll);
@@ -222,6 +225,7 @@ function applyUIState(s){
   r.dataset.chatWidth = s.uiChatWidth;
   r.dataset.codeWrap = s.uiCodeWrap;
   r.dataset.reduceMotion = s.uiReduceMotion ? "1" : "0";
+  r.dataset.visualTheme = s.visualTheme;
 }
 
 function loadUIState(){
@@ -262,35 +266,11 @@ document.getElementById("btnResetSettings")?.addEventListener("click", resetUISt
 document.addEventListener("input", (e)=>{
   if(!settingsModal || settingsModal.classList.contains("hidden")) return;
   const ids = new Set([
-    "uiFontSize","uiDensity","uiChatWidth","uiCodeWrap","uiReduceMotion"
+    "uiFontSize","uiDensity","uiChatWidth","uiCodeWrap","uiReduceMotion","visualTheme"
   ]);
   if(e.target?.id && ids.has(e.target.id)){
     applyUIState(readUIState());
   }
-});
-function closeSettings(){
-  settingsOverlay.classList.add("hidden");
-  settingsModal.classList.add("hidden");
-}
-
-btnSettings?.addEventListener("click", openSettings);
-btnSettingsClose?.addEventListener("click", closeSettings);
-settingsOverlay?.addEventListener("click", closeSettings);
-
-document.addEventListener("keydown", (e)=>{
-  if(e.key==="Escape") closeSettings();
-});
-
-document.querySelectorAll(".settingsTab").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    document.querySelectorAll(".settingsTab").forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");
-
-    const key = btn.getAttribute("data-settings-tab");
-    document.querySelectorAll(".settingsPanel").forEach(p=>{
-      p.classList.toggle("hidden", p.getAttribute("data-settings-panel") !== key);
-    });
-  });
 });
 
 
@@ -392,6 +372,78 @@ function escapeHtml(s) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function prefersReducedMotion() {
+  return document.documentElement.dataset.reduceMotion === "1" ||
+    (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+/* Ambient floating bubbles (water/nature vibe) */
+function initAmbientBubbles(){
+  if (prefersReducedMotion()) return;
+  if (document.getElementById("fxBubbles")) return;
+
+  const host = document.createElement("div");
+  host.id = "fxBubbles";
+  host.className = "fxBubbles";
+  host.setAttribute("aria-hidden", "true");
+
+  const N = 10;
+  for (let i = 0; i < N; i++){
+    const b = document.createElement("div");
+    b.className = "fxBubble";
+
+    const size = 120 + Math.random() * 240;
+    const left = Math.random() * 100;
+    const top  = Math.random() * 100;
+    const dur  = 10 + Math.random() * 14;
+    const alpha = 0.18 + Math.random() * 0.22;
+
+    const dx = (Math.random() * 60 - 30).toFixed(1) + "px";
+    const dy = (Math.random() * 70 - 35).toFixed(1) + "px";
+
+    b.style.left = left + "%";
+    b.style.top = top + "%";
+    b.style.setProperty("--size", size.toFixed(0) + "px");
+    b.style.setProperty("--dur", dur.toFixed(1) + "s");
+    b.style.setProperty("--alpha", alpha.toFixed(3));
+    b.style.setProperty("--dx", dx);
+    b.style.setProperty("--dy", dy);
+
+    host.appendChild(b);
+  }
+
+  document.body.prepend(host);
+}
+
+/* Click ripple */
+function installRipples(){
+  document.addEventListener("pointerdown", (e) => {
+    if (prefersReducedMotion()) return;
+
+    const target = e.target.closest?.(".btn, .iconbtn, .tab, .settingsTab, .chatItem, .docItem");
+    if (!target) return;
+
+    const r = target.getBoundingClientRect();
+    const s = Math.max(r.width, r.height) * 1.15;
+
+    const dot = document.createElement("span");
+    dot.className = "ripple";
+    dot.style.width = dot.style.height = s + "px";
+    dot.style.left = (e.clientX - r.left - s/2) + "px";
+    dot.style.top  = (e.clientY - r.top  - s/2) + "px";
+
+    target.appendChild(dot);
+    dot.addEventListener("animationend", () => dot.remove());
+  }, { passive: true });
+}
+
+/* Make topbar react to chat scroll */
+function updateTopbarScrolled(){
+  const topbar = document.querySelector(".topbar");
+  if (!topbar || !chatEl) return;
+  topbar.classList.toggle("scrolled", chatEl.scrollTop > 8);
 }
 
 // code blocks + inline `code` + newlines
@@ -676,6 +728,7 @@ chatEl?.addEventListener("scroll", () => {
     showScrollHint(false);
   }
   updateScrollButton();
+  updateTopbarScrolled();
 });
 
 function setGenerating(on) {
@@ -1157,6 +1210,37 @@ function msgNode(m) {
   const bubble = document.createElement("div");
   bubble.className = "bubble";
 
+  // New message entrance animation
+  if (m.__new) wrap.classList.add("pop");
+
+  // Pointer glow tracking (sets CSS vars used by .bubble::before)
+  bubble.addEventListener("pointermove", (e) => {
+    const r = bubble.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * 100;
+    const y = ((e.clientY - r.top) / r.height) * 100;
+    bubble.style.setProperty("--mx", x.toFixed(1) + "%");
+    bubble.style.setProperty("--my", y.toFixed(1) + "%");
+  }, { passive: true });
+
+  bubble.addEventListener("pointerleave", () => {
+    bubble.style.removeProperty("--mx");
+    bubble.style.removeProperty("--my");
+  });
+
+  // Dblclick bubble to copy (won't fire if user is selecting text)
+  bubble.addEventListener("dblclick", async () => {
+    const sel = window.getSelection?.();
+    if (sel && String(sel).trim().length) return;
+
+    try {
+      await navigator.clipboard.writeText(content || "");
+      toast?.("Copied", role === "user" ? "User message" : "Assistant message");
+      setStatus?.(true, "Copied");
+    } catch {
+      // ignore
+    }
+  });
+
   const metaEl = document.createElement("div");
   metaEl.className = "meta";
 
@@ -1176,6 +1260,7 @@ function msgNode(m) {
   btnCopy.onclick = async () => {
     try {
       await navigator.clipboard.writeText(content || "");
+      toast?.("Copied", "Message copied.");
       setStatus(true, "Copied");
     } catch {
       alert("Copy failed (clipboard blocked)");
@@ -1259,6 +1344,7 @@ function renderChat() {
     frag.appendChild(node.wrap);
   });
   chatEl.appendChild(frag);
+  state.messages.forEach(m => { if (m.__new) delete m.__new; });
 
   // Only auto-scroll if user was already at bottom
   if (wasAtBottom) {
@@ -1686,11 +1772,11 @@ async function send() {
     try {
       const result = await runSlashCommand(text);
       if (result) {
-        const userMsg = { id: null, role: "user", content: text, ts: nowTs() };
+        const userMsg = { id: null, role: "user", content: text, ts: nowTs(), __new: true };
         state.messages.push(userMsg);
         await appendToChat("user", text);
 
-        const assistant = { id: null, role: "assistant", content: result.text, ts: nowTs(), model: "system", meta: { slash: true } };
+        const assistant = { id: null, role: "assistant", content: result.text, ts: nowTs(), model: "system", meta: { slash: true }, __new: true };
         state.messages.push(assistant);
         await appendToChat("assistant", assistant.content, assistant.meta);
 
@@ -1702,11 +1788,11 @@ async function send() {
       }
     } catch (e) {
       const err = `Command failed: ${e}`;
-      const userMsg = { id: null, role: "user", content: text, ts: nowTs() };
+      const userMsg = { id: null, role: "user", content: text, ts: nowTs(), __new: true };
       state.messages.push(userMsg);
       await appendToChat("user", text);
 
-      const assistant = { id: null, role: "assistant", content: err, ts: nowTs(), model: "system", meta: { slash: true, error: true } };
+      const assistant = { id: null, role: "assistant", content: err, ts: nowTs(), model: "system", meta: { slash: true, error: true }, __new: true };
       state.messages.push(assistant);
       await appendToChat("assistant", assistant.content, assistant.meta);
 
@@ -1721,15 +1807,19 @@ async function send() {
 
   lastSources = [];
 
-  const userMsg = { id: null, role: "user", content: text, ts: nowTs() };
+  const userMsg = { id: null, role: "user", content: text, ts: nowTs(), __new: true };
   state.messages.push(userMsg);
   await appendToChat("user", text);
 
-  const assistant = { id: null, role: "assistant", content: "", ts: nowTs(), model: state.model, meta: null };
+  const assistant = { id: null, role: "assistant", content: "", ts: nowTs(), model: state.model, meta: null, __new: true };
   state.messages.push(assistant);
 
   saveState();
   renderChat();
+
+  // mark the last assistant bubble as generating (CSS uses .generating .bubble::after)
+  const genWrap = chatEl.lastElementChild;
+  genWrap?.classList.add("generating");
   promptEl.value = "";
   autoGrow();
 
@@ -1792,6 +1882,17 @@ async function send() {
     const decoder = new TextDecoder();
     let buf = "";
 
+    let raf = 0;
+    const scheduleLivePaint = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (liveBody) liveBody.textContent = assistant.content;
+        if (isNearBottom()) scrollToBottom();
+        else showScrollHint(true);
+      });
+    };
+
     const handleLine = (line) => {
       if (!line) return;
       let data;
@@ -1842,11 +1943,7 @@ async function send() {
       const chunk = data?.message?.content ?? data?.response ?? "";
       if (chunk) {
         assistant.content += chunk;
-        if (liveBody) {
-          liveBody.textContent = assistant.content;
-          if (isNearBottom()) scrollToBottom();
-          else showScrollHint(true);
-        }
+        scheduleLivePaint();
       }
       if (data?.error) assistant.content += `\n\n[error] ${data.error}`;
     };
@@ -1907,6 +2004,7 @@ async function send() {
   } finally {
     setGenerating(false);
     abortCtl = null;
+    chatEl.lastElementChild?.classList.remove("generating");
     renderChat();
   }
 }
@@ -2116,6 +2214,10 @@ async function exportChat(format) {
 
   // Load slash commands and initialize command palette
   loadSlashCommands();
+
+  initAmbientBubbles();
+  installRipples();
+  updateTopbarScrolled();
 
   initSettingsTabs();
   loadUIState();

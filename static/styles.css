@@ -1082,3 +1082,293 @@ body::after{
 
 :root[data-code-wrap="wrap"] pre { white-space: pre-wrap; word-break: break-word; }
 :root[data-code-wrap="nowrap"] pre { white-space: pre; }
+
+/* =========================
+   Water/Nature "Essence" FX Pack
+   Paste at bottom of styles.css
+   ========================= */
+
+/* Fix: you reference --card but never define it */
+:root{
+  --card: rgba(0,0,0,.14);
+
+  /* glass + blur */
+  --glass: rgba(15,22,36,.58);
+  --glass2: rgba(17,27,44,.62);
+  --blur: 16px;          /* main gaussian blur strength */
+  --blur2: 22px;         /* heavier blur for modals */
+  --sat: 1.28;           /* saturation lift */
+
+  /* "water/nature" accents (not literal icons, just vibes) */
+  --aqua: rgba(84,220,255,.95);
+  --kelp: rgba(56,210,125,.92);
+  --sun:  rgba(255,204,102,.90);
+  --rose: rgba(255,95,109,.82);
+
+  /* grading + grain */
+  --gradeOpacity: .26;
+  --grainOpacity: .045;
+
+  /* focus ring */
+  --ring: rgba(95,168,255,.35);
+}
+
+:root[data-theme="dark"]{ color-scheme: dark; }
+:root[data-theme="light"]{ color-scheme: light; }
+
+/* Light theme tweaks for glass to not look dirty */
+[data-theme="light"]{
+  --glass: rgba(255,255,255,.62);
+  --glass2: rgba(248,249,250,.72);
+  --gradeOpacity: .18;
+  --grainOpacity: .03;
+}
+
+/* Background grading layer (abstract color grading) */
+body{
+  position: relative;
+}
+body::before{
+  content:"";
+  position: fixed;
+  inset: -20%;
+  z-index: -3;
+  pointer-events:none;
+
+  background:
+    radial-gradient(900px 520px at 12% 12%, rgba(84,220,255,.14), transparent 62%),
+    radial-gradient(720px 520px at 88% 10%, rgba(56,210,125,.12), transparent 58%),
+    radial-gradient(820px 620px at 55% 92%, rgba(95,168,255,.12), transparent 60%),
+    radial-gradient(740px 560px at 20% 92%, rgba(255,204,102,.08), transparent 62%);
+
+  filter: blur(44px) saturate(1.12);
+  opacity: .95;
+  animation: gradeDrift 18s ease-in-out infinite alternate;
+  transform: translate3d(0,0,0);
+}
+
+@keyframes gradeDrift{
+  0%   { transform: translate3d(-1.2%, -0.6%, 0) scale(1.02); }
+  100% { transform: translate3d( 1.2%,  0.8%, 0) scale(1.05); }
+}
+
+/* Grain overlay (subtle) */
+body::after{
+  content:"";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events:none;
+
+  /* 2-layer: a soft overlay + tiny "grain dots" */
+  background:
+    linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,var(--gradeOpacity))),
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,var(--grainOpacity)) 1px, transparent 0);
+  background-size: 100% 100%, 3px 3px;
+
+  mix-blend-mode: overlay;
+  opacity: .9;
+}
+
+/* Ensure app stays above FX layers */
+.app{
+  position: relative;
+  z-index: 1;
+}
+
+/* Floating bubbles layer (JS will inject #fxBubbles) */
+.fxBubbles{
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events:none;
+  overflow:hidden;
+  filter: saturate(1.05);
+}
+.fxBubble{
+  position:absolute;
+  width: var(--size, 180px);
+  height: var(--size, 180px);
+  border-radius: 999px;
+  opacity: var(--alpha, .35);
+
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,255,255,.18), rgba(255,255,255,0) 55%),
+    radial-gradient(circle at 65% 70%, rgba(84,220,255,.10), rgba(56,210,125,0) 60%);
+
+  border: 1px solid rgba(255,255,255,.06);
+  box-shadow: 0 18px 55px rgba(0,0,0,.18);
+  transform: translate3d(0,0,0);
+
+  /* "gaussian blur" feel on the bubble itself */
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+
+  animation: bubbleFloat var(--dur, 14s) ease-in-out infinite;
+}
+@keyframes bubbleFloat{
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(var(--dx, 22px), calc(var(--dy, -28px) * 1), 0) scale(1.03); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+/* Glass upgrades everywhere */
+.topbar,
+.composer,
+.sidebar,
+.modal,
+.settingsModal{
+  background: var(--glass);
+  backdrop-filter: blur(var(--blur)) saturate(var(--sat));
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--sat));
+}
+
+/* Make topbar feel "alive" when chat scrolls */
+.topbar{
+  transition: box-shadow .18s ease, border-color .18s ease;
+}
+.topbar.scrolled{
+  box-shadow: 0 16px 46px rgba(0,0,0,.22);
+  border-bottom-color: rgba(255,255,255,.14);
+}
+
+/* Chat mask (soft fade at top/bottom, feels premium) */
+.chat{
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 18px, black calc(100% - 22px), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, black 18px, black calc(100% - 22px), transparent 100%);
+}
+
+/* Bubble glow that tracks pointer (JS sets --mx/--my) */
+.bubble{
+  background: var(--glass2);
+  backdrop-filter: blur(var(--blur)) saturate(var(--sat));
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--sat));
+
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+  will-change: transform;
+  overflow:hidden;
+}
+.bubble::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  pointer-events:none;
+  border-radius: inherit;
+
+  background:
+    radial-gradient(520px 240px at var(--mx, 30%) var(--my, 20%), rgba(84,220,255,.14), transparent 60%),
+    radial-gradient(520px 240px at calc(var(--mx, 30%) + 18%) calc(var(--my, 20%) + 12%), rgba(56,210,125,.10), transparent 62%);
+  filter: blur(22px);
+  opacity: .85;
+}
+.msg:hover .bubble{
+  transform: translateY(-1px);
+  box-shadow: 0 18px 50px rgba(0,0,0,.26);
+  border-color: rgba(255,255,255,.14);
+}
+
+/* Slightly nicer role tints */
+.msg.user .bubble{
+  background: rgba(95,168,255,.13);
+  border-color: rgba(95,168,255,.22);
+}
+.msg.assistant .bubble{
+  background: rgba(17,27,44,.64);
+}
+
+/* Message entrance animation (only new msgs get .pop) */
+.msg.pop{
+  animation: msgPop .22s cubic-bezier(.2,.9,.2,1) both;
+}
+@keyframes msgPop{
+  from{ transform: translateY(6px); opacity: 0; }
+  to  { transform: translateY(0); opacity: 1; }
+}
+
+/* Buttons + tabs: smoother + a little "wet" shine */
+.btn,
+.iconbtn,
+.tab,
+.settingsTab,
+.chatItem,
+.docItem{
+  position: relative;
+  overflow: hidden;
+  transition: transform .12s ease, border-color .12s ease, background .12s ease, box-shadow .12s ease;
+}
+
+.btn:hover,
+.iconbtn:hover,
+.tab:hover,
+.settingsTab:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(0,0,0,.18);
+}
+
+/* Ripple (JS injects span.ripple) */
+.ripple{
+  position:absolute;
+  border-radius: 999px;
+  pointer-events:none;
+  background: radial-gradient(circle, rgba(255,255,255,.26), rgba(255,255,255,0) 62%);
+  transform: scale(.2);
+  opacity: .9;
+  animation: ripple .55s ease-out forwards;
+}
+@keyframes ripple{
+  to{ transform: scale(1.25); opacity: 0; }
+}
+
+/* Better focus-visible */
+:focus-visible{
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(95,168,255,.18);
+  border-color: rgba(95,168,255,.35);
+}
+
+/* Scrollbar polish (webkit) */
+.chat::-webkit-scrollbar{ width: 10px; }
+.chat::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,.08);
+  border: 2px solid rgba(0,0,0,0);
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+.chat::-webkit-scrollbar-thumb:hover{ background: rgba(255,255,255,.12); }
+
+/* Modal heavier blur */
+.modal,
+.settingsModal{
+  backdrop-filter: blur(var(--blur2)) saturate(var(--sat));
+  -webkit-backdrop-filter: blur(var(--blur2)) saturate(var(--sat));
+}
+
+/* Respect your reduce-motion setting + OS setting */
+@media (prefers-reduced-motion: reduce){
+  *{ animation: none !important; transition: none !important; }
+}
+:root[data-reduce-motion="1"] *{
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Visual theme variants */
+:root[data-visual-theme="deep-ocean"]{
+  --blur: 20px;
+  --blur2: 28px;
+  --sat: 1.4;
+  --gradeOpacity: .32;
+  --grainOpacity: .05;
+  --glass: rgba(10,14,22,.68);
+  --glass2: rgba(15,22,36,.72);
+}
+
+:root[data-visual-theme="morning-dew"]{
+  --blur: 12px;
+  --blur2: 18px;
+  --sat: 1.1;
+  --gradeOpacity: .18;
+  --grainOpacity: .03;
+  --glass: rgba(255,255,255,.65);
+  --glass2: rgba(248,249,250,.75);
+}
