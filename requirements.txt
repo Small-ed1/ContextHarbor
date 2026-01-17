@@ -9,3 +9,4 @@ psutil
 lxml
 readability-lxml
 numpy
+requests
