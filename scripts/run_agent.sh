@@ -8,4 +8,4 @@ export OLLAMA_SUPERVISOR="${OLLAMA_SUPERVISOR:-}"
 # optional: web search backend
 # export SEARXNG_URL="${SEARXNG_URL:-http://localhost:8080/search}"
 
-python3 scripts/ollama_tool_agent.py
+./venv/bin/python3 scripts/ollama_tool_agent.py

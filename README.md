@@ -13,6 +13,16 @@ A local-first AI assistant with chat, RAG, and deep research capabilities. Built
 - **Kiwix Integration**: Offline Wikipedia access through Kiwix server
 - **Settings Management**: Per-chat settings for model, temperature, context, and more
 
+## Tool Agent
+
+For advanced interactions with Ollama using tool-calling, run the included agent:
+
+```bash
+./scripts/run_agent.sh
+```
+
+This provides a CLI interface with web search, document search, and safe terminal execution tools.
+
 ## Quick Start
 
 ### Prerequisites
