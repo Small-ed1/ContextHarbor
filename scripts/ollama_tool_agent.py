@@ -194,7 +194,7 @@ class ToolSelector:
     def __init__(self, registry: ToolRegistry):
         self.registry = registry
 
-    def select(self, user_text: str, max_tools: int) -> List[ToolSpec]:
+    def select(self, user_text: str, max_tools: int, debug: bool = False) -> List[ToolSpec]:
         text = user_text.lower()
 
         scored: List[Tuple[int, ToolSpec]] = []
@@ -215,12 +215,18 @@ class ToolSelector:
         scored.sort(key=lambda x: x[0], reverse=True)
         picked = [s for (sc, s) in scored if sc > 0][:max_tools]
 
+        if debug:
+            print(f"DEBUG selector: scored {[(sc, s.name) for sc, s in scored]} picked {[s.name for s in picked]}")
+
         # if nothing matched, still expose a couple "general" tools if they exist
         if not picked:
             for fallback in ("doc_search", "web_search"):
                 sp = self.registry.get_spec(fallback)
                 if sp:
                     picked.append(sp)
+
+        if debug:
+            print(f"DEBUG fallback: picked {[s.name for s in picked]}")
 
         # final cap
         return picked[:max_tools]
@@ -454,8 +460,13 @@ class ToolCallingAgent:
         return out
 
     def run(self, user_text: str) -> str:
+        debug = os.getenv("DEBUG_AGENT") == "1"
+        if debug:
+            print(f"DEBUG: user_text: {user_text}")
         # Filter tools for THIS query
         selected_specs = self.selector.select(user_text, self.cfg.max_tools_exposed)
+        if debug:
+            print(f"DEBUG: selected tools: {[s.name for s in selected_specs]}")
         tools_payload = self._tool_schemas_for(selected_specs)
         allowed_tool_names = {s.name for s in selected_specs}
 
@@ -476,7 +487,7 @@ class ToolCallingAgent:
                 messages=messages,
                 tools=tools_payload,
                 stream=self.cfg.stream,
-                think=False,
+                think=True,
             )
 
             msg = resp.get("message", {})
@@ -490,6 +501,12 @@ class ToolCallingAgent:
                     tool_calls = parse_tool_json(msg["content"])
                 except Exception:
                     tool_calls = []
+
+            if debug:
+                print(f"DEBUG: step {step}: tool_calls: {len(tool_calls)}")
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    print(f"DEBUG: tool call: {fn.get('name')} args: {fn.get('arguments')}")
 
             # If no tool calls -> final answer
             if not tool_calls:
