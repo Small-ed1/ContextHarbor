@@ -1774,6 +1774,30 @@ async function send() {
   const liveBody = lastWrap?.querySelector?.(".content");
   let assistantSaved = false;
 
+  const prevStatusText = statusText?.textContent || "";
+
+  let phaseEl = null;
+  const stageText = (stage, toolName = "") => {
+    if (stage === "pulling_from_disk") return "Pulling from disk (loading model)...";
+    if (stage === "calling_tools") return toolName ? `Calling tools: ${toolName}...` : "Calling tools...";
+    if (stage === "constructing_response") return "Constructing response...";
+    return "";
+  };
+
+  // Show an explicit progress hint inside the generating assistant bubble.
+  try {
+    const metaEl = lastWrap?.querySelector?.(".meta");
+    const toolsEl = lastWrap?.querySelector?.(".tools");
+    if (metaEl && toolsEl) {
+      phaseEl = document.createElement("div");
+      phaseEl.className = "phasePill";
+      phaseEl.textContent = stageText("pulling_from_disk");
+      metaEl.insertBefore(phaseEl, toolsEl);
+    }
+  } catch {}
+
+  setStatus(true, stageText("pulling_from_disk"));
+
   const ragEnabled = !!ragToggle?.checked;
   if (autoModelToggle?.checked) {
     try { await decideModel(text, ragEnabled); } catch {}
@@ -1797,7 +1821,6 @@ async function send() {
         enabled: ragEnabled,
         top_k: Number(state.settings.top_k || 6),
         doc_ids: docSel, // null => all docs
-        embed_model: "embeddinggemma",
         use_mmr: !!state.settings.use_mmr,
         mmr_lambda: 0.75,
       }
@@ -1852,6 +1875,22 @@ async function send() {
             box.appendChild(row);
           });
         }
+        return;
+      }
+
+      if (data?.type === "status") {
+        const msg = stageText(data.stage);
+        if (msg) {
+          if (phaseEl) phaseEl.textContent = msg;
+          setStatus(true, msg);
+        }
+        return;
+      }
+
+      if (data?.type === "tool") {
+        const msg = stageText("calling_tools", data.name || "");
+        if (phaseEl) phaseEl.textContent = msg;
+        if (msg) setStatus(true, msg);
         return;
       }
 
@@ -1939,6 +1978,7 @@ async function send() {
     setGenerating(false);
     abortCtl = null;
     renderChat();
+    if (prevStatusText) setStatus(true, prevStatusText);
   }
 }
 

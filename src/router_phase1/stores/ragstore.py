@@ -6,9 +6,11 @@ from typing import Optional, Any
 from contextlib import contextmanager
 import httpx
 
-DB_PATH = os.getenv("RAG_DB", os.path.join(os.path.dirname(__file__), "../../../data/rag.sqlite3"))
+from .. import config
+
+DB_PATH = os.path.abspath(os.getenv("RAG_DB", config.config.rag_db))
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-DEFAULT_EMBED_MODEL = os.getenv("EMBED_MODEL", "embeddinggemma")
+DEFAULT_EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 
 MAX_DOC_BYTES = int(os.getenv("RAG_MAX_DOC_BYTES", str(10 * 1024 * 1024)))
 MAX_TOP_K = int(os.getenv("RAG_MAX_TOPK", "20"))

@@ -27,6 +27,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
+API_BASE = os.getenv("API_BASE", "http://localhost:8000").rstrip("/")
+
 # ----------------------------
 # Types
 # ----------------------------
@@ -288,64 +290,55 @@ def truncate(s: str, max_chars: int) -> str:
     return s[:max_chars] + "\n...[TRUNCATED]..."
 
 
-def tool_web_search(query: str, top_k: int = 5) -> Json:
-    """
-    Plug this into your real search provider.
-    Easiest: SearxNG JSON endpoint.
-      export SEARXNG_URL="http://localhost:8080/search"
-    """
-    searx = os.getenv("SEARXNG_URL")
-    if not searx:
-        return {"error": "SEARXNG_URL not set; web_search is stubbed", "query": query}
-
-    params = {"q": query, "format": "json"}
-    r = requests.get(searx, params=params, timeout=10)
+def _api_post(path: str, payload: Json, timeout_s: int = 30) -> Json:
+    url = f"{API_BASE}{path}"
+    r = requests.post(url, json=payload, timeout=timeout_s)
     r.raise_for_status()
-    data = r.json()
-
-    results = []
-    for item in data.get("results", [])[:top_k]:
-        results.append({
-            "title": item.get("title"),
-            "url": item.get("url"),
-            "snippet": item.get("content") or item.get("snippet"),
-        })
-    return {"query": query, "results": results}
+    return r.json()
 
 
-def tool_doc_search(query: str, root: str = "./docs", top_k: int = 5) -> Json:
-    """
-    Simple local doc search: scans .txt/.md/.log.
-    Replace with ripgrep, sqlite FTS, embeddings, etc.
-    """
-    root_path = Path(root).expanduser()
-    if not root_path.exists():
-        return {"error": f"root path not found: {root_path}", "query": query}
+def tool_web_search(
+    query: str,
+    top_k: int = 5,
+    pages: int = 5,
+    domain_whitelist: Optional[List[str]] = None,
+    embed_model: Optional[str] = None,
+    force: bool = False,
+) -> Json:
+    payload = {
+        "query": query,
+        "top_k": top_k,
+        "pages": pages,
+        "domain_whitelist": domain_whitelist,
+        "embed_model": embed_model,
+        "force": force,
+    }
+    try:
+        return _api_post("/api/tools/web_search", payload, timeout_s=60)
+    except Exception as e:
+        return {"error": f"api error: {e}", "query": query, "api_base": API_BASE}
 
-    q = query.lower()
-    hits: List[Tuple[int, str, str]] = []  # (score, file, line)
 
-    for p in root_path.rglob("*"):
-        if not p.is_file():
-            continue
-        if p.suffix.lower() not in (".txt", ".md", ".log"):
-            continue
-        try:
-            with p.open("r", encoding="utf-8", errors="ignore") as f:
-                for i, line in enumerate(f, start=1):
-                    l = line.strip()
-                    if not l:
-                        continue
-                    if q in l.lower():
-                        # crude score: more matches = higher
-                        score = l.lower().count(q)
-                        hits.append((score, str(p), f"{i}: {l[:300]}"))
-        except Exception:
-            continue
-
-    hits.sort(key=lambda x: x[0], reverse=True)
-    results = [{"file": f, "match": line} for (_, f, line) in hits[:top_k]]
-    return {"query": query, "results": results, "root": str(root_path)}
+def tool_doc_search(
+    query: str,
+    top_k: int = 5,
+    doc_ids: Optional[List[int]] = None,
+    embed_model: Optional[str] = None,
+    use_mmr: Optional[bool] = None,
+    mmr_lambda: float = 0.75,
+) -> Json:
+    payload = {
+        "query": query,
+        "top_k": top_k,
+        "doc_ids": doc_ids,
+        "embed_model": embed_model,
+        "use_mmr": use_mmr,
+        "mmr_lambda": mmr_lambda,
+    }
+    try:
+        return _api_post("/api/tools/doc_search", payload, timeout_s=60)
+    except Exception as e:
+        return {"error": f"api error: {e}", "query": query, "api_base": API_BASE}
 
 
 # Terminal safety
@@ -603,13 +596,17 @@ def build_registry() -> ToolRegistry:
     reg.register(
         ToolSpec(
             name="web_search",
-            description="Search the web for fresh info (SearxNG JSON endpoint recommended).",
+            description="Search the web and retrieve relevant cached chunks via the API.",
             parameters={
                 "type": "object",
                 "required": ["query"],
                 "properties": {
                     "query": {"type": "string", "description": "Search query"},
                     "top_k": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Number of results"},
+                    "pages": {"type": "integer", "minimum": 1, "maximum": 12, "description": "Pages to fetch"},
+                    "domain_whitelist": {"type": "array", "items": {"type": "string"}},
+                    "embed_model": {"type": "string"},
+                    "force": {"type": "boolean"},
                 },
                 "additionalProperties": False,
             },
@@ -621,14 +618,17 @@ def build_registry() -> ToolRegistry:
     reg.register(
         ToolSpec(
             name="doc_search",
-            description="Search local documents in a folder for relevant matches.",
+            description="Search indexed documents via the API (RAG retrieval).",
             parameters={
                 "type": "object",
                 "required": ["query"],
                 "properties": {
                     "query": {"type": "string"},
-                    "root": {"type": "string", "description": "Root folder to search", "default": "./docs"},
                     "top_k": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+                    "doc_ids": {"type": "array", "items": {"type": "integer"}},
+                    "embed_model": {"type": "string"},
+                    "use_mmr": {"type": "boolean"},
+                    "mmr_lambda": {"type": "number", "minimum": 0, "maximum": 1},
                 },
                 "additionalProperties": False,
             },

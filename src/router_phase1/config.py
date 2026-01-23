@@ -5,7 +5,7 @@ from typing import Optional
 class Config:
     def __init__(self):
         self.ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-        self.default_embed_model = os.getenv("EMBED_MODEL", "embeddinggemma")
+        self.default_embed_model = os.getenv("EMBED_MODEL", "nomic-embed-text")
         self.default_chat_model = os.getenv("DEFAULT_CHAT_MODEL", "llama3.1")
         self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
         self.web_user_agent = os.getenv("WEB_UA", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari")
@@ -15,6 +15,7 @@ class Config:
         self.rag_db = os.getenv("RAG_DB", "data/rag.sqlite3")
         self.chat_db = os.getenv("CHAT_DB", "data/chat.sqlite3")
         self.web_db = os.getenv("WEB_DB", "data/web.sqlite3")
+        self.research_db = os.getenv("RESEARCH_DB", "data/research.sqlite3")
         
         self.decider_model = os.getenv("DECIDER_MODEL")
         self.research_planner_model = os.getenv("RESEARCH_PLANNER_MODEL")

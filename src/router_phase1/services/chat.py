@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import json
-import time
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 import httpx
 
 from .context import build_context, rag_system_prompt
 from .models import ModelRegistry
 from .retrieval import DocRetrievalProvider
+from .tooling import chat_with_tools
+from .web_ingest import WebIngestQueue
 
 
 def _validate_messages(msgs: list[dict]) -> list[dict]:
@@ -37,6 +39,8 @@ async def stream_chat(
     keep_alive: str | None,
     rag: dict | None,
     embed_model: str,
+    web_ingest: WebIngestQueue | None,
+    kiwix_url: str | None,
 ) -> AsyncGenerator[str, None]:
     if not messages or not model:
         raise ValueError("Messages and model are required")
@@ -54,6 +58,7 @@ async def stream_chat(
     rag = rag or {"enabled": False}
 
     if rag.get("enabled"):
+        yield json.dumps({"type": "status", "stage": "calling_tools"}) + "\n"
         last_user = next((m for m in reversed(clean_messages) if m["role"] == "user"), None)
         query = (last_user or {}).get("content", "")
         provider = DocRetrievalProvider()
@@ -71,14 +76,40 @@ async def stream_chat(
         clean_messages = [{"role": "system", "content": system}] + clean_messages
         yield json.dumps({"type": "sources", "sources": sources_meta}) + "\n"
 
-    payload: dict[str, Any] = {"model": model, "messages": clean_messages, "stream": True}
-    if options is not None:
-        payload["options"] = options
-    if keep_alive is not None:
-        payload["keep_alive"] = keep_alive
+    q: asyncio.Queue[str | None] = asyncio.Queue()
 
-    async with http.stream("POST", f"{ollama_url}/api/chat", json=payload) as r:
-        r.raise_for_status()
-        async for line in r.aiter_lines():
-            if line.strip():
-                yield line + "\n"
+    async def emit(evt: dict):
+        await q.put(json.dumps(evt) + "\n")
+
+    async def run():
+        try:
+            content = await chat_with_tools(
+                http=http,
+                ollama_url=ollama_url,
+                model=model,
+                messages=clean_messages,
+                options=options,
+                keep_alive=keep_alive,
+                embed_model=embed_model,
+                ingest_queue=web_ingest,
+                kiwix_url=kiwix_url,
+                emit=emit,
+            )
+            if content:
+                await q.put(json.dumps({"message": {"content": content}}) + "\n")
+        except Exception as exc:
+            await q.put(json.dumps({"type": "error", "error": str(exc)}) + "\n")
+        finally:
+            await q.put(json.dumps({"done": True}) + "\n")
+            await q.put(None)
+
+    task = asyncio.create_task(run())
+    try:
+        while True:
+            item = await q.get()
+            if item is None:
+                break
+            yield item
+    finally:
+        if not task.done():
+            task.cancel()

@@ -18,7 +18,7 @@ from .. import config
 
 WEB_DB = os.path.abspath(os.getenv("WEB_DB", config.config.web_db))
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-DEFAULT_EMBED_MODEL = os.getenv("EMBED_MODEL", "embeddinggemma")
+DEFAULT_EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 
 USER_AGENT = os.getenv(
     "WEB_UA",

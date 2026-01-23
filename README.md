@@ -22,6 +22,7 @@ For advanced interactions with Ollama using tool-calling, run the included agent
 ```
 
 This provides a CLI interface with web search, document search, and safe terminal execution tools.
+It expects the FastAPI server to be running and uses `API_BASE` (default `http://localhost:8000`).
 
 ## Quick Start
 

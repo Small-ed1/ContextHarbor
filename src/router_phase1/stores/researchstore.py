@@ -2,7 +2,9 @@ from __future__ import annotations
 import os, sqlite3, time, uuid, json
 from typing import Any, Optional
 
-RESEARCH_DB = os.getenv("RESEARCH_DB", os.path.join(os.path.dirname(__file__), "../data/research.sqlite3"))
+from .. import config
+
+RESEARCH_DB = os.path.abspath(os.getenv("RESEARCH_DB", config.config.research_db))
 
 def _now() -> int:
     return int(time.time())

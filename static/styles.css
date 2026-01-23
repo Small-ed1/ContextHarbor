@@ -476,6 +476,24 @@ body::after{
 }
 .msg:hover .tools{opacity:1}
 
+.phasePill{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0 auto;
+  max-width: 56%;
+}
+
 .content{
   color: var(--text);
   line-height: 1.45;

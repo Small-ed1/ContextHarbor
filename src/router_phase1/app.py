@@ -20,9 +20,8 @@ from .services.kiwix import fetch_page as kiwix_fetch_page
 from .services.kiwix import search as kiwix_search
 from .services.models import ModelRegistry
 from .services.research import run_research
-from .services.retrieval import KiwixRetrievalProvider
+from .services.tooling import ToolDocSearchReq, ToolWebSearchReq, chat_with_tools, tool_doc_search, tool_web_search
 from .services.web_ingest import WebIngestQueue
-from .services.web_search import ddg_search
 
 logging.basicConfig(
     level=logging.INFO,
@@ -114,7 +113,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/")
 async def root():
-    return FileResponse(os.path.join(os.path.dirname(__file__), "../web/static/index.html"))
+    return FileResponse(os.path.join(static_dir, "index.html"))
 
 @app.get("/health")
 async def health():
@@ -240,103 +239,27 @@ async def docs_upload(file: UploadFile = File(...)):
     doc_id = await ragstore.add_document(safe_filename, text)
     return {"ok": True, "doc_id": doc_id}
 
-class ToolDocSearchReq(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    query: str
-    top_k: int = 6
-    doc_ids: list[int] | None = None
-    embed_model: str | None = None
-    use_mmr: bool | None = None
-    mmr_lambda: float = 0.75
-
-class ToolWebSearchReq(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    query: str
-    top_k: int = 6
-    pages: int = 5
-    domain_whitelist: list[str] | None = None
-    embed_model: str | None = None
-    force: bool = False
-
 @app.post("/api/tools/doc_search")
 async def api_tool_doc_search(req: ToolDocSearchReq):
-    query = (req.query or "").strip()
-    if not query:
-        raise HTTPException(status_code=400, detail="query required")
-    hits = await ragstore.retrieve(
-        query,
-        top_k=req.top_k,
-        doc_ids=req.doc_ids,
-        embed_model=req.embed_model,
-        use_mmr=req.use_mmr,
-        mmr_lambda=req.mmr_lambda,
-    )
-    return {"query": query, "results": hits}
+    try:
+        return await tool_doc_search(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 @app.post("/api/tools/web_search")
 async def api_tool_web_search(req: ToolWebSearchReq):
-    query = (req.query or "").strip()
-    if not query:
-        raise HTTPException(status_code=400, detail="query required")
     if not _http:
         raise HTTPException(status_code=503, detail="client not initialized")
-    http = _http
-    pages = max(1, min(int(req.pages), 12))
-    errors = []
-    kiwix_results: list[dict] = []
-    kiwix_url = os.getenv("KIWIX_URL")
-    if kiwix_url:
-        try:
-            provider = KiwixRetrievalProvider(kiwix_url)
-            kiwix_results = [r.__dict__ for r in await provider.retrieve(query, top_k=req.top_k, embed_model=req.embed_model)]
-        except Exception as e:
-            errors.append({"stage": "kiwix", "error": str(e)})
     try:
-        urls = await ddg_search(http, query, n=pages)
-    except Exception as e:
-        urls = []
-        errors.append({"stage": "search", "error": str(e)})
-
-    fetched = []
-    queued: list[str] = []
-    if urls:
-        sync_cap = 2 if not req.force else len(urls)
-        sync_targets = urls[:sync_cap]
-        queued = urls[sync_cap:]
-        tasks = [webstore.upsert_page_from_url(u, force=bool(req.force)) for u in sync_targets]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for url, result in zip(sync_targets, results):
-            if isinstance(result, BaseException):
-                errors.append({"url": url, "error": str(result)})
-                continue
-            if not isinstance(result, dict):
-                errors.append({"url": url, "error": "unexpected response"})
-                continue
-            fetched.append({
-                "url": result.get("url") or url,
-                "title": result.get("title"),
-                "domain": result.get("domain"),
-                "page_id": result.get("id"),
-            })
-        for url in queued:
-            await _web_ingest.enqueue(url)
-
-    hits = await webstore.retrieve(
-        query,
-        top_k=req.top_k,
-        domain_whitelist=req.domain_whitelist,
-        embed_model=req.embed_model,
-    )
-    combined = kiwix_results + hits
-    return {
-        "query": query,
-        "urls": urls,
-        "fetched": fetched,
-        "queued": queued,
-        "errors": errors,
-        "kiwix_results": kiwix_results,
-        "results": combined,
-    }
+        return await tool_web_search(
+            req,
+            http=_http,
+            ingest_queue=_web_ingest,
+            embed_model=DEFAULT_EMBED_MODEL,
+            kiwix_url=os.getenv("KIWIX_URL"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 class KiwixSearchReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -611,22 +534,24 @@ async def api_summary(chat_id: str):
         + body
     )
 
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-    }
-    opts = {}
-    if temp is not None: opts["temperature"] = temp
-    if num_ctx is not None: opts["num_ctx"] = int(num_ctx)
-    if opts: payload["options"] = opts
-
     try:
         if not _http:
             raise HTTPException(status_code=503, detail="client not initialized")
-        r = await _http.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=60.0)
-        r.raise_for_status()
-        out = (r.json().get("message") or {}).get("content", "").strip()
+        opts = {}
+        if temp is not None:
+            opts["temperature"] = temp
+        if num_ctx is not None:
+            opts["num_ctx"] = int(num_ctx)
+        out = await chat_with_tools(
+            http=_http,
+            ollama_url=OLLAMA_URL,
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            options=opts or None,
+            embed_model=DEFAULT_EMBED_MODEL,
+            ingest_queue=_web_ingest,
+            kiwix_url=os.getenv("KIWIX_URL"),
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -693,22 +618,24 @@ async def api_autosummary(chat_id: str, force: int = 0):
         "Chat window:\n" + body
     )
 
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-    }
-    opts = {}
-    if temp is not None: opts["temperature"] = float(temp)
-    if num_ctx is not None: opts["num_ctx"] = int(num_ctx)
-    if opts: payload["options"] = opts
-
     try:
         if not _http:
             raise HTTPException(status_code=503, detail="client not initialized")
-        r = await _http.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=90.0)
-        r.raise_for_status()
-        out = (r.json().get("message") or {}).get("content", "").strip()
+        opts = {}
+        if temp is not None:
+            opts["temperature"] = float(temp)
+        if num_ctx is not None:
+            opts["num_ctx"] = int(num_ctx)
+        out = await chat_with_tools(
+            http=_http,
+            ollama_url=OLLAMA_URL,
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            options=opts or None,
+            embed_model=DEFAULT_EMBED_MODEL,
+            ingest_queue=_web_ingest,
+            kiwix_url=os.getenv("KIWIX_URL"),
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -886,6 +813,8 @@ async def api_chat(req: ChatReq):
                 keep_alive=req.keep_alive,
                 rag=req.rag.model_dump() if req.rag else None,
                 embed_model=DEFAULT_EMBED_MODEL,
+                web_ingest=_web_ingest,
+                kiwix_url=os.getenv("KIWIX_URL"),
             ):
                 yield line
         except Exception as e:

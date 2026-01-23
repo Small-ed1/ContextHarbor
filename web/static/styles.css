@@ -453,6 +453,24 @@ button, input, textarea, select{
 }
 .meta .model{ color: var(--muted2); }
 
+.phasePill{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0 auto;
+  max-width: 56%;
+}
+
 .content{
   font-size: 1rem;
   line-height: 1.55;

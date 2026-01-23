@@ -9,6 +9,7 @@ import httpx
 from .context import build_context
 from .retrieval import DocRetrievalProvider, WebRetrievalProvider, KiwixRetrievalProvider
 from .web_ingest import WebIngestQueue
+from .tooling import chat_with_tools
 from .web_search import ddg_search
 from ..stores import researchstore, webstore
 from .. import config
@@ -110,7 +111,18 @@ async def _verify_claims(http: httpx.AsyncClient, base_url: str, verifier_model:
     return {"claims": cleaned, "raw": out}
 
 
-async def _synthesize(http: httpx.AsyncClient, base_url: str, synth_model: str, query: str, context_lines: list[str], verified_claims: list[dict]) -> str:
+async def _synthesize(
+    http: httpx.AsyncClient,
+    base_url: str,
+    synth_model: str,
+    query: str,
+    context_lines: list[str],
+    verified_claims: list[dict],
+    *,
+    embed_model: str,
+    ingest_queue: WebIngestQueue | None,
+    kiwix_url: str | None,
+) -> str:
     vc = json.dumps(verified_claims, ensure_ascii=False)
     prompt = (
         "Write best possible answer.\n"
@@ -122,7 +134,15 @@ async def _synthesize(http: httpx.AsyncClient, base_url: str, synth_model: str, 
         f"Verified claims JSON:\n{vc}\n\n"
         "CONTEXT:\n" + "\n".join(context_lines)
     )
-    return await _ollama_chat_once(http, base_url, synth_model, [{"role": "user", "content": prompt}], timeout=90.0)
+    return await chat_with_tools(
+        http=http,
+        ollama_url=base_url,
+        model=synth_model,
+        messages=[{"role": "user", "content": prompt}],
+        embed_model=embed_model,
+        ingest_queue=ingest_queue,
+        kiwix_url=kiwix_url,
+    )
 
 
 async def run_research(
@@ -279,7 +299,17 @@ async def run_research(
             if supported >= 6:
                 break
 
-        final = await _synthesize(http, base_url, synth_model, query, context_lines, verify["claims"])
+        final = await _synthesize(
+            http,
+            base_url,
+            synth_model,
+            query,
+            context_lines,
+            verify["claims"],
+            embed_model=embed_model,
+            ingest_queue=ingest_queue,
+            kiwix_url=kiwix_url,
+        )
         researchstore.set_run_done(run_id, final)
         researchstore.add_trace(run_id, "done", {"len": len(final)})
         return {"ok": True, "run_id": run_id, "answer": final}

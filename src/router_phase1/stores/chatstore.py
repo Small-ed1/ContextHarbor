@@ -59,12 +59,12 @@ def init_db():
         if v < 6:
             _migrate_6_autosummary(con)
             _set_user_version(con, 6); v = 6
-    if v < 7:
-        _migrate_7_token_count(con)
-        _set_user_version(con, 7); v = 7
-    if v < 8:
-        _migrate_8_message_status(con)
-        _set_user_version(con, 8); v = 8
+        if v < 7:
+            _migrate_7_token_count(con)
+            _set_user_version(con, 7); v = 7
+        if v < 8:
+            _migrate_8_message_status(con)
+            _set_user_version(con, 8); v = 8
 
 def _migrate_1_baseline(con: sqlite3.Connection):
     con.execute("""
