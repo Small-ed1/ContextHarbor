@@ -12,3 +12,7 @@ data/*.sqlite3
 *.pem
 secrets.json
 credentials.json
+*.egg-info/
+dist/
+build/
+src/*.egg-info/

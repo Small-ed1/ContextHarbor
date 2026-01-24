@@ -24,7 +24,7 @@ async def ddg_search(http: httpx.AsyncClient, query: str, n: int = 8) -> list[st
     if not q:
         return []
     
-    url = "https://duckduckgo.com/html/"
+    url = "https://html.duckduckgo.com/html/"  # Use the final redirect target
     headers = {
         "User-Agent": os.getenv(
             "WEB_UA",
@@ -53,12 +53,13 @@ async def ddg_search(http: httpx.AsyncClient, query: str, n: int = 8) -> list[st
             f"content_len={len(r.text)}, location={r.headers.get('Location', 'None')}"
         )
         
-        # Check for redirects (blocking indicators)
+        # Check for redirects that go outside DDG (likely blocking)
         if r.status_code in (301, 302, 303, 307, 308):
             location = r.headers.get("Location", "")
-            raise SearchError(
-                f"DDG redirected (likely blocked): status={r.status_code}, location={location}"
-            )
+            if location and "duckduckgo.com" not in location.lower():
+                raise SearchError(
+                    f"DDG redirected to external site (likely blocked): status={r.status_code}, location={location}"
+                )
         
         # Check for non-200 responses
         if r.status_code != 200:
@@ -66,11 +67,11 @@ async def ddg_search(http: httpx.AsyncClient, query: str, n: int = 8) -> list[st
                 f"DDG returned non-200 status: {r.status_code}"
             )
         
-        # Check for tiny responses (indicating blocking)
+        # Check for tiny responses or captcha/redirect pages
         if len(r.text) < 1000:
-            if "302 Found" in r.text or "redirect" in r.text.lower():
+            if any(phrase in r.text.lower() for phrase in ["captcha", "robot", "blocked", "access denied"]):
                 raise SearchError(
-                    f"DDG returned tiny response with redirect page: {len(r.text)} bytes"
+                    f"DDG returned blocking page: {len(r.text)} bytes"
                 )
             else:
                 logger.warning(f"DDG returned suspiciously small response: {len(r.text)} bytes")
@@ -164,8 +165,9 @@ async def web_search_with_fallback(
                 logger.warning(f"Unknown provider: {prov}")
                 continue
             
-            # Cache successful results
-            cache.set(query, n, results)
+            # Cache successful non-empty results only
+            if results:
+                cache.set(query, n, results)
             return results, f"{prov}_success"
             
         except SearchError as e:

@@ -47,23 +47,29 @@ class SearchCache:
 
 
 class RateLimiter:
-    """Simple rate limiter per provider."""
+    """Simple rate limiter per provider with async locking."""
     
     def __init__(self, min_interval_seconds: int = 2):
         self.min_interval = min_interval_seconds
         self.last_request: Dict[str, float] = {}
+        self._locks: Dict[str, asyncio.Lock] = {}
     
     async def wait_if_needed(self, provider: str) -> None:
-        """Wait if provider was called too recently."""
-        now = time.time()
-        last_time = self.last_request.get(provider, 0)
+        """Wait if provider was called too recently (thread-safe)."""
+        # Create lock for this provider if not exists
+        if provider not in self._locks:
+            self._locks[provider] = asyncio.Lock()
         
-        elapsed = now - last_time
-        if elapsed < self.min_interval:
-            wait_time = self.min_interval - elapsed
-            await asyncio.sleep(wait_time)
-        
-        self.last_request[provider] = time.time()
+        async with self._locks[provider]:
+            now = time.time()
+            last_time = self.last_request.get(provider, 0)
+            
+            elapsed = now - last_time
+            if elapsed < self.min_interval:
+                wait_time = self.min_interval - elapsed
+                await asyncio.sleep(wait_time)
+            
+            self.last_request[provider] = time.time()
 
 
 # Global instances

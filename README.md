@@ -294,6 +294,10 @@ export SEARXNG_URL="https://search.brave.com"
 docker run -p 8080:8080 -d searxng/searxng
 export SEARXNG_URL="http://localhost:8080"
 
+# Or use public SearxNG instances
+export SEARXNG_URL="https://searx.be"  # Example public instance
+export SEARXNG_URL="https://search.brave.search"  # Another SearxNG-compatible instance
+
 # Solution 4: Check tool execution logs
 sqlite3 ~/.cognihub/data/tool.sqlite3 \
   "SELECT tool_name, ok, duration_ms, output_excerpt FROM tool_runs ORDER BY ts DESC LIMIT 5;"
