@@ -17,6 +17,8 @@ from .stores import chatstore
 from .stores import researchstore
 from .stores import webstore
 from .services.chat import stream_chat
+from .services.tool_chat import chat_with_tool_contract
+from .services.intelligent_chat import should_use_intelligent_tools, stream_chat_intelligent
 from .services.kiwix import fetch_page as kiwix_fetch_page
 from .services.kiwix import search as kiwix_search
 from .services.models import ModelRegistry
@@ -830,6 +832,7 @@ class ChatReq(BaseModel):
     rag: RagConfig | None = None
     chat_id: str | None = None
     message_id: str | None = None
+    use_intelligent_tools: bool = False
 
 
 @app.post("/api/chat")
@@ -846,23 +849,49 @@ async def api_chat(req: ChatReq, request: Request):
         try:
             # Emit IDs first
             yield json.dumps({"type": "ids", "chat_id": chat_id, "message_id": message_id}) + "\n"
-            async for line in stream_chat(
-                http=http,
-                model_registry=_model_registry,
-                ollama_url=OLLAMA_URL,
-                model=req.model,
-                messages=req.messages,
-                options=req.options,
-                keep_alive=req.keep_alive,
-                rag=req.rag.model_dump() if req.rag else None,
-                embed_model=DEFAULT_EMBED_MODEL,
-                web_ingest=_web_ingest,
-                kiwix_url=os.getenv("KIWIX_URL"),
-                request=request,
-                chat_id=chat_id,
-                message_id=message_id,
-            ):
-                yield line
+            
+            # Decide whether to use intelligent tool system
+            use_intelligent = should_use_intelligent_tools(req.messages, req.use_intelligent_tools)
+            
+            if use_intelligent:
+                # Use the new intelligent tool-calling system
+                logger.info(f"Using intelligent tool system for chat_id={chat_id}")
+                async for line in stream_chat_intelligent(
+                    http=http,
+                    ollama_url=OLLAMA_URL,
+                    model=req.model,
+                    messages=req.messages,
+                    options=req.options,
+                    keep_alive=req.keep_alive,
+                    embed_model=DEFAULT_EMBED_MODEL,
+                    tool_registry=_model_registry,
+                    tool_executor=app.state.tool_executor,
+                    kiwix_url=os.getenv("KIWIX_URL"),
+                    chat_id=chat_id,
+                    message_id=message_id,
+                ):
+                    yield line
+            else:
+                # Use the existing tool system
+                logger.info(f"Using legacy tool system for chat_id={chat_id}")
+                stream_gen = stream_chat(
+                    http=http,
+                    model_registry=_model_registry,
+                    ollama_url=OLLAMA_URL,
+                    model=req.model,
+                    messages=req.messages,
+                    options=req.options,
+                    keep_alive=req.keep_alive,
+                    rag=req.rag.model_dump() if req.rag else None,
+                    embed_model=DEFAULT_EMBED_MODEL,
+                    web_ingest=_web_ingest,
+                    kiwix_url=os.getenv("KIWIX_URL"),
+                    request=request,
+                    chat_id=chat_id,
+                    message_id=message_id,
+                )
+                async for line in stream_gen:
+                    yield line
         except Exception as e:
             yield json.dumps({"type": "error", "error": str(e)}) + "\n"
 
