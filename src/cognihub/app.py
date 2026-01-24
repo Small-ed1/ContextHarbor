@@ -856,7 +856,7 @@ async def api_chat(req: ChatReq, request: Request):
             if use_intelligent:
                 # Use the new intelligent tool-calling system
                 logger.info(f"Using intelligent tool system for chat_id={chat_id}")
-                async for line in stream_chat_intelligent(
+                result = await stream_chat_intelligent(
                     http=http,
                     ollama_url=OLLAMA_URL,
                     model=req.model,
@@ -869,8 +869,8 @@ async def api_chat(req: ChatReq, request: Request):
                     kiwix_url=os.getenv("KIWIX_URL"),
                     chat_id=chat_id,
                     message_id=message_id,
-                ):
-                    yield line
+                )
+                yield result
             else:
                 # Use the existing tool system
                 logger.info(f"Using legacy tool system for chat_id={chat_id}")

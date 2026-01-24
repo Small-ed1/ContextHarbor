@@ -4,6 +4,7 @@ import json
 import re
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, List, Tuple, Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -142,7 +143,7 @@ class EvidenceSynthesizer:
     """Synthesizes and evaluates evidence from tool results."""
     
     def __init__(self):
-        self.current_date = datetime.now().strftime('%B %d, %Y')
+        self.current_date = datetime.now(tz=ZoneInfo("America/Chicago")).strftime('%A, %B %d, %Y')
         
     def summarize_evidence(self, intent: QueryIntent, tool_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Summarize collected evidence into a coherent knowledge base."""
@@ -378,9 +379,11 @@ class IntelligentToolLoop:
                 tool_calls = self._extract_tool_calls(raw_response)
                 tool_results.extend(await self._execute_tools(tool_calls, tool_executor, http, embed_model, kiwix_url))
                 
-                # Add tool results back to context
-                for result in tool_results[-len(tool_calls):]:
-                    working_messages.append(self._format_tool_result(result))
+        # Add tool results back to context
+        if evidence['sources'] and tool_calls:
+            new_results = tool_results[-len(tool_calls):]
+            for result in new_results:
+                working_messages.append(self._format_tool_result(result))
             
             # Stage 4: Check sufficiency
             evidence = self.synthesizer.summarize_evidence(intent, tool_results)
@@ -450,10 +453,10 @@ class IntelligentToolLoop:
         
         results = []
         for call in tool_calls:
+            tool_name = call.get("name", "")
+            args = call.get("arguments", {})
+            
             try:
-                tool_name = call.get("name", "")
-                args = call.get("arguments", {})
-                
                 result = await tool_executor.execute(
                     tool_name=tool_name,
                     args_json=args,
@@ -469,7 +472,7 @@ class IntelligentToolLoop:
                 })
             except Exception as e:
                 results.append({
-                    "tool": call.get("name", ""),
+                    "tool": tool_name,
                     "result": {"error": str(e)},
                     "ok": False
                 })
