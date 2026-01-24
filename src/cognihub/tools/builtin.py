@@ -47,7 +47,8 @@ def register_builtin_tools(
             )
 
             items = []
-            for p in result.get("pages", []):
+            # tool_web_search returns results in "results" key, not "pages"
+            for p in result.get("results", []):
                 items.append({
                     "title": p.get("title", ""),
                     "url": p.get("url", ""),
