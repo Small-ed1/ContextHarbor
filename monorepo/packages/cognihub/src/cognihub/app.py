@@ -19,7 +19,10 @@ from .stores import webstore
 from .services.chat import stream_chat
 from .services.tool_chat import chat_with_tool_contract
 from .services.intelligent_chat import should_use_intelligent_tools, stream_chat_intelligent
+import asyncio
+
 from .services.kiwix import fetch_page as kiwix_fetch_page
+from .services.kiwix import list_zims as kiwix_list_zims
 from .services.kiwix import search as kiwix_search
 from .services.models import ModelRegistry
 from .services.research import run_research
@@ -293,7 +296,7 @@ async def api_tool_web_search(req: ToolWebSearchReq):
             http=_http,
             ingest_queue=_web_ingest,
             embed_model=DEFAULT_EMBED_MODEL,
-            kiwix_url=os.getenv("KIWIX_URL"),
+            kiwix_url=config.config.kiwix_url,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -305,7 +308,7 @@ class KiwixSearchReq(BaseModel):
 
 @app.post("/api/kiwix/search")
 async def api_kiwix_search(req: KiwixSearchReq):
-    kiwix_url = os.getenv("KIWIX_URL")
+    kiwix_url = config.config.kiwix_url
     if not kiwix_url:
         return {"results": [], "error": "KIWIX_URL not set"}
     query = (req.query or "").strip()
@@ -316,13 +319,20 @@ async def api_kiwix_search(req: KiwixSearchReq):
 
 @app.get("/api/kiwix/page")
 async def api_kiwix_page(path: str = Query(..., min_length=1)):
-    kiwix_url = os.getenv("KIWIX_URL")
+    kiwix_url = config.config.kiwix_url
     if not kiwix_url:
         return {"page": None, "error": "KIWIX_URL not set"}
     page = await kiwix_fetch_page(kiwix_url, path)
     if not page:
         raise HTTPException(status_code=404, detail="page not found")
     return {"page": page}
+
+
+@app.get("/api/kiwix/zims")
+async def api_kiwix_zims(zim_dir: Optional[str] = Query(default=None)):
+    # Defaults to /mnt/HDD/zims via config + ollama-cli defaults.
+    zims = await kiwix_list_zims(zim_dir or config.config.kiwix_zim_dir)
+    return {"zim_dir": zim_dir or config.config.kiwix_zim_dir, "zims": zims}
 
 @app.get("/api/chunks/{chunk_id}")
 async def get_chunk(chunk_id: int):

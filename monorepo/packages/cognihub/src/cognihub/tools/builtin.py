@@ -26,6 +26,10 @@ class ShellExecArgs(BaseModel):
     timeout: int = Field(default=30, ge=1, le=300)
 
 
+class KiwixListZimsArgs(BaseModel):
+    zim_dir: Optional[str] = Field(default=None, max_length=512)
+
+
 def register_builtin_tools(
     registry: ToolRegistry,
     *,
@@ -131,6 +135,14 @@ def register_builtin_tools(
         except Exception as e:
             return {"error": f"execution failed: {str(e)}"}
 
+    async def kiwix_list_zims_handler(args: KiwixListZimsArgs) -> Dict[str, Any]:
+        from ..services import kiwix
+        from .. import config
+
+        zim_dir = args.zim_dir or config.config.kiwix_zim_dir
+        zims = await kiwix.list_zims(zim_dir)
+        return {"zims": zims, "zim_dir": zim_dir}
+
     registry.register(
         ToolSpec(
             name="web_search",
@@ -138,6 +150,16 @@ def register_builtin_tools(
             args_model=WebSearchArgs,
             handler=web_search_handler,
             side_effect="network",
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="kiwix_list_zims",
+            description="List local Kiwix ZIM files. Args: {zim_dir?}. Returns: {zims:[...], zim_dir}",
+            args_model=KiwixListZimsArgs,
+            handler=kiwix_list_zims_handler,
+            side_effect="read_only",
         )
     )
 

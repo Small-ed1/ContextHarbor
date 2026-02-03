@@ -27,6 +27,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
+from ollama_cli.client import OllamaClient as _OllamaClient
+
 API_BASE = os.getenv("API_BASE", "http://localhost:8000").rstrip("/")
 
 # ----------------------------
@@ -87,25 +89,18 @@ class AgentConfig:
 class OllamaClient:
     def __init__(self, host: str):
         self.host = host.rstrip("/")
+        self._client = _OllamaClient(self.host, timeout=60)
 
     def chat(self, model: str, messages: List[Json], tools: Optional[List[Json]] = None,
              stream: bool = False, options: Optional[Json] = None, think: bool = False) -> Json:
-        url = f"{self.host}/api/chat"
-        payload: Json = {
-            "model": model,
-            "messages": messages,
-            "stream": stream,
-        }
-        if tools is not None:
-            payload["tools"] = tools
-        if options is not None:
-            payload["options"] = options
+        # NOTE: ollama-cli client returns an iterator; keep the local API returning
+        # a single JSON dict for compatibility.
         if think:
-            payload["think"] = True
+            options = dict(options or {})
+            options["think"] = True
 
-        r = requests.post(url, json=payload, timeout=60)
-        r.raise_for_status()
-        return r.json()
+        it = self._client.chat(messages=messages, model=model, tools=tools, stream=stream, options=options)
+        return next(it)
 
 
 # ----------------------------
