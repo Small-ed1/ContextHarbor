@@ -44,9 +44,11 @@ def _wait_http(url: str, timeout_s: float = 10.0) -> None:
 @pytest.mark.skipif(shutil.which("kiwix-serve") is None, reason="kiwix-serve not installed")
 def test_kiwix_suggest_and_open_with_real_server() -> None:
     # Use a small ZIM for predictable startup and request latency.
-    src_zim = "/mnt/HDD/zims/python.zim"
+    src_zim = os.getenv("KIWIX_TEST_ZIM")
+    if not src_zim:
+        pytest.skip("KIWIX_TEST_ZIM not set")
     if not os.path.exists(src_zim):
-        pytest.skip("/mnt/HDD/zims/python.zim not found")
+        pytest.skip(f"KIWIX_TEST_ZIM not found: {src_zim}")
 
     port = _free_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -57,7 +59,7 @@ def test_kiwix_suggest_and_open_with_real_server() -> None:
         with open(lib_path, "w", encoding="utf-8") as f:
             f.write(
                 "<library version=\"20110515\">\n"
-                "  <book id=\"test\" path=\"/mnt/HDD/zims/python.zim\" title=\"Python\" name=\"python\" />\n"
+                f"  <book id=\"test\" path=\"{src_zim}\" title=\"Test\" name=\"test\" />\n"
                 "</library>\n"
             )
 
@@ -83,8 +85,8 @@ def test_kiwix_suggest_and_open_with_real_server() -> None:
             assert "path" in suggestions[0]
 
             first_path = suggestions[0]["path"]
-            opened = kt.open_raw("python", first_path, max_chars=4000)
-            assert opened["zim"] == "python"
+            opened = kt.open_raw("test", first_path, max_chars=4000)
+            assert opened["zim"] == "test"
             assert opened["path"] == first_path
             assert opened["content"]
 
@@ -94,9 +96,11 @@ def test_kiwix_suggest_and_open_with_real_server() -> None:
 
 
 def test_kiwix_list_zims_from_directory() -> None:
-    src_zim = "/mnt/HDD/zims/python.zim"
+    src_zim = os.getenv("KIWIX_TEST_ZIM")
+    if not src_zim:
+        pytest.skip("KIWIX_TEST_ZIM not set")
     if not os.path.exists(src_zim):
-        pytest.skip("/mnt/HDD/zims/python.zim not found")
+        pytest.skip(f"KIWIX_TEST_ZIM not found: {src_zim}")
 
     with tempfile.TemporaryDirectory() as tmp:
         # Keep listing fast by using a temp directory.
