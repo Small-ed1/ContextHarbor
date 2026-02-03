@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ollama-cli"
+version = "1.0.0"
+description = "Command-line interface for Ollama with tool capabilities"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = ["requests"]
+authors = [{name = "Small-ed1", email = "small.ed1123@gmail.com"}]
+
+[project.optional-dependencies]
+web = ["trafilatura", "beautifulsoup4", "readability-lxml"]
+kiwix = []
+dev = ["pytest", "pytest-asyncio", "mypy", "build", "types-requests"]
+
+[project.scripts]
+ollama-cli = "ollama_cli.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

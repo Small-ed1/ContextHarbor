@@ -16,3 +16,9 @@ credentials.json
 dist/
 build/
 src/*.egg-info/
+
+# Monorepo staging workspace
+monorepo/.venv/
+monorepo/data/
+monorepo/.mypy_cache/
+monorepo/.pytest_cache/
