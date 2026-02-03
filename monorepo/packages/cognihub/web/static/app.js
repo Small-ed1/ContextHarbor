@@ -2536,7 +2536,18 @@ async function exportChat(format) {
 
   await ensureChatSelected();
   await loadChats();
-  await selectChat(currentChatId); // loads prefs too
+  try {
+    await selectChat(currentChatId); // loads prefs too
+  } catch (e) {
+    const msg = String(e?.message || e || "");
+    if (msg.includes("chat not found") || msg.includes("HTTP 404")) {
+      currentChatId = null;
+      localStorage.removeItem("currentChatId");
+      await ensureChatSelected();
+    } else {
+      throw e;
+    }
+  }
   await loadDocs();
   renderChat();
   closeSidebar();

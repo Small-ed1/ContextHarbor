@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import os
-import pwd
 import sys
 from pathlib import Path
+
+try:
+    import pwd  # type: ignore
+except Exception:  # pragma: no cover
+    pwd = None  # type: ignore
 
 
 def _ok(msg: str) -> None:
@@ -37,10 +41,17 @@ def _effective_home() -> Path:
     If running under sudo, prefer the invoking user's home.
     """
     try:
-        if hasattr(os, "geteuid") and os.geteuid() == 0:
+        geteuid = getattr(os, "geteuid", None)
+        uid = geteuid() if callable(geteuid) else None
+        if pwd and isinstance(uid, int) and uid == 0:
             sudo_user = os.getenv("SUDO_USER")
             if sudo_user:
-                return Path(pwd.getpwnam(sudo_user).pw_dir)
+                getpwnam = getattr(pwd, "getpwnam", None)
+                if callable(getpwnam):
+                    info = getpwnam(sudo_user)
+                    pw_dir = getattr(info, "pw_dir", None)
+                    if isinstance(pw_dir, str) and pw_dir:
+                        return Path(pw_dir)
     except Exception:
         pass
     return Path.home()
