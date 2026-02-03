@@ -9,7 +9,6 @@ description = "Command-line interface for Ollama with tool capabilities"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = ["requests"]
-authors = [{name = "Small-ed1", email = "small.ed1123@gmail.com"}]
 
 [project.optional-dependencies]
 web = ["trafilatura", "beautifulsoup4", "readability-lxml"]
