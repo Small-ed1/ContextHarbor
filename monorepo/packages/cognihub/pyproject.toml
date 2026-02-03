@@ -11,6 +11,7 @@ requires-python = ">=3.14"
 dependencies = [
   "ollama-cli",
   "requests",
+  "EbookLib",
   "fastapi",
   "uvicorn[standard]",
   "httpx",

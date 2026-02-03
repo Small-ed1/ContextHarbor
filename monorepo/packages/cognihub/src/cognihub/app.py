@@ -24,6 +24,7 @@ import asyncio
 from .services.kiwix import fetch_page as kiwix_fetch_page
 from .services.kiwix import list_zims as kiwix_list_zims
 from .services.kiwix import search as kiwix_search
+from .ingest import epub as epub_ingest
 from .services.models import ModelRegistry
 from .services.research import run_research
 from .services.tooling import ToolDocSearchReq, ToolWebSearchReq, chat_with_tools, tool_doc_search, tool_web_search
@@ -333,6 +334,42 @@ async def api_kiwix_zims(zim_dir: Optional[str] = Query(default=None)):
     # Defaults to /mnt/HDD/zims via config + ollama-cli defaults.
     zims = await kiwix_list_zims(zim_dir or config.config.kiwix_zim_dir)
     return {"zim_dir": zim_dir or config.config.kiwix_zim_dir, "zims": zims}
+
+
+class EpubIngestReq(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    path: Optional[str] = None
+    query: Optional[str] = None
+    limit: int = 1
+
+
+@app.get("/api/epubs")
+async def api_epubs_list(q: Optional[str] = Query(default=None), limit: int = Query(default=25, ge=1, le=200)):
+    items = await asyncio.to_thread(
+        epub_ingest.list_epubs,
+        query=q,
+        limit=limit,
+        library_dir=config.config.ebooks_dir,
+    )
+    return {"library_dir": config.config.ebooks_dir, "items": items}
+
+
+@app.post("/api/epubs/ingest")
+async def api_epubs_ingest(req: EpubIngestReq):
+    if req.path:
+        return await epub_ingest.ingest_epub(
+            path=req.path,
+            embed_model=DEFAULT_EMBED_MODEL,
+            library_dir=config.config.ebooks_dir,
+        )
+    if req.query:
+        return await epub_ingest.ingest_epubs_by_query(
+            query=req.query,
+            limit=req.limit,
+            embed_model=DEFAULT_EMBED_MODEL,
+            library_dir=config.config.ebooks_dir,
+        )
+    raise HTTPException(status_code=400, detail="path or query required")
 
 @app.get("/api/chunks/{chunk_id}")
 async def get_chunk(chunk_id: int):

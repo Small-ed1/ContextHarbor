@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import httpx
 import subprocess
@@ -28,6 +29,17 @@ class ShellExecArgs(BaseModel):
 
 class KiwixListZimsArgs(BaseModel):
     zim_dir: Optional[str] = Field(default=None, max_length=512)
+
+
+class EpubListArgs(BaseModel):
+    q: Optional[str] = Field(default=None, max_length=256)
+    limit: int = Field(default=25, ge=1, le=200)
+
+
+class EpubIngestArgs(BaseModel):
+    path: Optional[str] = Field(default=None, max_length=1024)
+    q: Optional[str] = Field(default=None, max_length=256)
+    limit: int = Field(default=1, ge=1, le=20)
 
 
 def register_builtin_tools(
@@ -143,6 +155,39 @@ def register_builtin_tools(
         zims = await kiwix.list_zims(zim_dir)
         return {"zims": zims, "zim_dir": zim_dir}
 
+    async def epub_list_handler(args: EpubListArgs) -> Dict[str, Any]:
+        from .. import config
+        from ..ingest import epub as epub_ingest
+
+        library_dir = config.config.ebooks_dir
+        items = await asyncio.to_thread(
+            epub_ingest.list_epubs,
+            query=args.q,
+            limit=args.limit,
+            library_dir=library_dir,
+        )
+        return {"library_dir": library_dir, "items": items}
+
+    async def epub_ingest_handler(args: EpubIngestArgs) -> Dict[str, Any]:
+        from .. import config
+        from ..ingest import epub as epub_ingest
+
+        library_dir = config.config.ebooks_dir
+        if args.path:
+            return await epub_ingest.ingest_epub(
+                path=args.path,
+                embed_model=embed_model,
+                library_dir=library_dir,
+            )
+        if args.q:
+            return await epub_ingest.ingest_epubs_by_query(
+                query=args.q,
+                limit=args.limit,
+                embed_model=embed_model,
+                library_dir=library_dir,
+            )
+        return {"ok": False, "error": "Provide either path or q"}
+
     registry.register(
         ToolSpec(
             name="web_search",
@@ -160,6 +205,26 @@ def register_builtin_tools(
             args_model=KiwixListZimsArgs,
             handler=kiwix_list_zims_handler,
             side_effect="read_only",
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="epub_list",
+            description="List EPUBs from the Calibre library. Args: {q?, limit?}. Returns: {items:[{path}], library_dir}",
+            args_model=EpubListArgs,
+            handler=epub_list_handler,
+            side_effect="read_only",
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="epub_ingest",
+            description="Ingest EPUB(s) into RAG. Args: {path?} or {q?, limit?}. Returns: {ok, doc_id?} or {results:[...]}",
+            args_model=EpubIngestArgs,
+            handler=epub_ingest_handler,
+            side_effect="writes",
         )
     )
 
