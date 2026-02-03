@@ -1,5 +1,115 @@
 const el = (id) => document.getElementById(id);
 
+// ---------- Routing / pages ----------
+const pages = {
+  home: el("pageHome"),
+  chat: el("pageChat"),
+  library: el("pageLibrary"),
+  models: el("pageModels"),
+  settings: el("pageSettings"),
+  chats: el("pageChats"),
+  help: el("pageHelp"),
+};
+
+const composer = el("composer");
+
+const navHome = el("navHome");
+const navChat = el("navChat");
+const navLibrary = el("navLibrary");
+const navModels = el("navModels");
+const navSettingsNav = el("navSettingsNav");
+const btnChatsPage = el("btnChatsPage");
+const btnModelQuick = el("btnModelQuick");
+const currentModelLabel = el("currentModelLabel");
+
+function _setActiveNav(key){
+  const map = { home: navHome, chat: navChat, library: navLibrary, models: navModels, settings: navSettingsNav };
+  Object.entries(map).forEach(([k, btn]) => {
+    btn?.classList.toggle("active", k === key);
+  });
+}
+
+function showPage(key){
+  // Restore sidebar layout when leaving the dedicated chats page
+  if (document.body.dataset.route === "chats" && key !== "chats") {
+    unmountChatsToSidebar();
+  }
+
+  Object.entries(pages).forEach(([k, node]) => {
+    node?.classList.toggle("hidden", k !== key);
+  });
+
+  document.body.dataset.route = key;
+  _setActiveNav(key);
+
+  // Composer only on chat page
+  composer?.classList.toggle("hidden", key !== "chat");
+
+  // Keep sidebar context in sync
+  if (key === "chat") {
+    setTab("chats");
+  } else if (key === "library") {
+    setTab("docs");
+    try { loadDocs(); } catch {}
+  }
+}
+
+function parseRoute(){
+  const h = (location.hash || "").replace(/^#/, "");
+  const path = h.startsWith("/") ? h : "/home";
+  const seg = path.split("/").filter(Boolean);
+  const page = (seg[0] || "home").toLowerCase();
+  if (!pages[page]) return { page: "home" };
+  return { page };
+}
+
+function navigate(page){
+  location.hash = `#/${page}`;
+}
+
+function initRouter(){
+  navHome?.addEventListener("click", ()=> navigate("home"));
+  navChat?.addEventListener("click", ()=> navigate("chat"));
+  navLibrary?.addEventListener("click", ()=> navigate("library"));
+  navModels?.addEventListener("click", ()=> navigate("models"));
+  navSettingsNav?.addEventListener("click", ()=> navigate("settings"));
+
+  btnChatsPage?.addEventListener("click", ()=> navigate("chats"));
+  btnModelQuick?.addEventListener("click", ()=> {
+    navigate("settings");
+    // defer tab switch until mounted
+    setTimeout(()=>{
+      document.querySelector('[data-settings-tab="model"]')?.click();
+    }, 0);
+  });
+
+  el("homeNewChat")?.addEventListener("click", ()=> {
+    navigate("chat");
+    el("btnNewChat")?.click();
+  });
+  el("homeGoChat")?.addEventListener("click", ()=> navigate("chat"));
+  el("homeGoLibrary")?.addEventListener("click", ()=> navigate("library"));
+  el("homeGoSettings")?.addEventListener("click", ()=> navigate("settings"));
+
+  window.addEventListener("hashchange", ()=> {
+    const { page } = parseRoute();
+    showPage(page);
+    if (page === "models") loadModelsPage();
+    if (page === "library") loadLibraryPage();
+    if (page === "settings") mountSettingsIntoPage();
+    if (page === "help") mountHelpIntoPage();
+    if (page === "chats") mountChatsIntoPage();
+  });
+
+  const { page } = parseRoute();
+  showPage(page);
+  if (page === "models") loadModelsPage();
+  if (page === "library") loadLibraryPage();
+  if (page === "settings") mountSettingsIntoPage();
+  if (page === "help") mountHelpIntoPage();
+  if (page === "chats") mountChatsIntoPage();
+}
+
 const chatEl = el("chat");
 const promptEl = el("prompt");
 const modelSelect = el("modelSelect");
@@ -68,20 +178,11 @@ function toast(title, body = "", ms = 1600){
 let lastFocus = null;
 
 function openSettings(){
-  if(!settingsOverlay || !settingsModal) return;
-  lastFocus = document.activeElement;
-  settingsOverlay.classList.remove("hidden");
-  settingsModal.classList.remove("hidden");
-  // focus first interactive element
-  const first = settingsModal.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
-  first?.focus();
+  navigate("settings");
 }
 
 function closeSettings(){
-  if(!settingsOverlay || !settingsModal) return;
-  settingsOverlay.classList.add("hidden");
-  settingsModal.classList.add("hidden");
-  lastFocus?.focus?.();
+  navigate("home");
 }
 
 btnSettings?.addEventListener("click", openSettings);
@@ -90,8 +191,12 @@ settingsOverlay?.addEventListener("click", closeSettings);
 
 // Focus trap + Escape
 document.addEventListener("keydown", (e)=>{
-  if(e.key === "Escape" && settingsModal && !settingsModal.classList.contains("hidden")) {
+  if(e.key === "Escape" && document.body?.dataset?.route === "settings") {
     closeSettings();
+    return;
+  }
+  if(e.key === "Escape" && document.body?.dataset?.route === "help") {
+    navigate("home");
     return;
   }
   if(e.key === "Escape" && shortcutsModal && !shortcutsModal.classList.contains("hidden")) {
@@ -165,6 +270,11 @@ const DEFAULT_UI = {
 
   // Model/RAG
   ragToggle: true, // default ON, tucked away
+
+  // Sources (defaults can be overridden in Settings)
+  srcZimDir: "~/zims",
+  srcEbooksDir: "~/Ebooks",
+  srcKiwixUrl: "",
 };
 
 function readUIState(){
@@ -191,6 +301,10 @@ function readUIState(){
 
   // RAG toggle lives only in settings
   s.ragToggle = get("ragToggle") ? chk("ragToggle") : true;
+
+  s.srcZimDir = pick("srcZimDir") || s.srcZimDir;
+  s.srcEbooksDir = pick("srcEbooksDir") || s.srcEbooksDir;
+  s.srcKiwixUrl = pick("srcKiwixUrl") || s.srcKiwixUrl;
 
   return s;
 }
@@ -221,6 +335,10 @@ function writeUIState(s){
   setChk("confirmClearChat", s.confirmClearChat);
 
   setChk("ragToggle", s.ragToggle);
+
+  setVal("srcZimDir", s.srcZimDir);
+  setVal("srcEbooksDir", s.srcEbooksDir);
+  setVal("srcKiwixUrl", s.srcKiwixUrl);
 }
 
 function applyUIState(s){
@@ -251,6 +369,7 @@ function saveUIState(){
   const s = readUIState();
   localStorage.setItem("ui.settings", JSON.stringify(s));
   applyUIState(s);
+  syncSourcesFromUiToControls(s);
   toast("Saved", "Settings updated.");
   return s;
 }
@@ -259,8 +378,289 @@ function resetUIState(){
   localStorage.removeItem("ui.settings");
   writeUIState({...DEFAULT_UI});
   applyUIState({...DEFAULT_UI});
+  syncSourcesFromUiToControls({...DEFAULT_UI});
   toast("Reset", "Back to defaults.");
 }
+
+// ---------- Settings mounting into Settings page ----------
+function mountSettingsIntoPage(){
+  const mount = el("settingsMount");
+  if (!mount || !settingsModal) return;
+  if (settingsModal.parentElement !== mount) {
+    // Ensure visible as a page (not a modal)
+    settingsOverlay?.classList.add("hidden");
+    settingsModal.classList.remove("hidden");
+    settingsModal.style.position = "static";
+    mount.appendChild(settingsModal);
+  }
+}
+
+// ---------- Help mounting into Help page ----------
+function mountHelpIntoPage(){
+  const mount = el("helpMount");
+  if (!mount || !shortcutsModal) return;
+  if (shortcutsModal.parentElement !== mount) {
+    shortcutsOverlay?.classList.add("hidden");
+    shortcutsModal.classList.remove("hidden");
+    shortcutsModal.style.position = "static";
+    mount.appendChild(shortcutsModal);
+  }
+}
+
+// ---------- Chats mounting into Chats page ----------
+let _chatsMountPrev = null;
+function mountChatsIntoPage(){
+  const mount = el("chatsMount");
+  if (!mount || !panelChats) return;
+  if (!_chatsMountPrev) {
+    _chatsMountPrev = { parent: panelChats.parentElement, next: panelChats.nextSibling };
+  }
+  if (panelChats.parentElement !== mount) {
+    mount.appendChild(panelChats);
+    panelChats.classList.remove("hidden");
+  }
+}
+
+function unmountChatsToSidebar(){
+  if (!_chatsMountPrev || !panelChats) return;
+  const { parent, next } = _chatsMountPrev;
+  if (!parent) return;
+  if (next) parent.insertBefore(panelChats, next);
+  else parent.appendChild(panelChats);
+}
+
+// ---------- Library page helpers ----------
+const kiwixZimDirEl = el("kiwixZimDir");
+const btnReloadZims = el("btnReloadZims");
+const zimsListEl = el("zimsList");
+
+const ebooksDirEl = el("ebooksDir");
+const epubQueryEl = el("epubQuery");
+const btnReloadEpubs = el("btnReloadEpubs");
+const btnIngestTopEpub = el("btnIngestTopEpub");
+const epubsListEl = el("epubsList");
+const epubStatusEl = el("epubStatus");
+
+const srcZimDirEl = el("srcZimDir");
+const srcEbooksDirEl = el("srcEbooksDir");
+const srcKiwixUrlEl = el("srcKiwixUrl");
+
+function _ui(){
+  try{
+    const raw = localStorage.getItem("ui.settings");
+    return raw ? { ...DEFAULT_UI, ...JSON.parse(raw) } : { ...DEFAULT_UI };
+  } catch {
+    return { ...DEFAULT_UI };
+  }
+}
+
+function _saveUiPatch(patch){
+  const s = _ui();
+  const next = { ...s, ...patch };
+  try { localStorage.setItem("ui.settings", JSON.stringify(next)); } catch {}
+  return next;
+}
+
+function _setText(node, text){
+  if (!node) return;
+  node.textContent = text;
+}
+
+function _setIfNotEditing(input, value){
+  if (!input) return;
+  const v = (value ?? "").toString();
+  if (document.activeElement === input) return;
+  if (input.value === v) return;
+  input.value = v;
+}
+
+function syncSourcesFromUiToControls(s = null){
+  const ui = s || _ui();
+  _setIfNotEditing(kiwixZimDirEl, ui.srcZimDir || "~/zims");
+  _setIfNotEditing(ebooksDirEl, ui.srcEbooksDir || "~/Ebooks");
+
+  _setIfNotEditing(srcZimDirEl, ui.srcZimDir || "~/zims");
+  _setIfNotEditing(srcEbooksDirEl, ui.srcEbooksDir || "~/Ebooks");
+  _setIfNotEditing(srcKiwixUrlEl, ui.srcKiwixUrl || "");
+}
+
+async function loadZims(){
+  const s = _ui();
+  const zim_dir = (kiwixZimDirEl?.value || s.srcZimDir || "").trim();
+  if (kiwixZimDirEl && !kiwixZimDirEl.value) kiwixZimDirEl.value = zim_dir;
+  _setText(epubStatusEl, "");
+  if (!zimsListEl) return;
+  zimsListEl.innerHTML = "";
+
+  if (!zim_dir){
+    zimsListEl.innerHTML = `<div class="muted">Set a ZIM directory in Settings → Sources.</div>`;
+    return;
+  }
+
+  const qs = new URLSearchParams();
+  if (zim_dir) qs.set("zim_dir", zim_dir);
+  const res = await fetch(`/api/kiwix/zims?${qs.toString()}`);
+  const j = await res.json().catch(()=> ({}));
+  const zims = j.zims || [];
+
+  if (!Array.isArray(zims) || zims.length === 0){
+    zimsListEl.innerHTML = `<div class="muted">No ZIMs found.</div>`;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const z of zims){
+    const item = document.createElement("div");
+    item.className = "listItem";
+    const title = (z.title || z.file || z.name || "").toString();
+    const file = (z.file || z.path || "").toString();
+    item.innerHTML = `<div><div class="itemTitle">${escapeHtml(title || file)}</div><div class="itemSub">${escapeHtml(file)}</div></div>`;
+    frag.appendChild(item);
+  }
+  zimsListEl.appendChild(frag);
+}
+
+async function loadEpubs(){
+  const s = _ui();
+  const library_dir = (ebooksDirEl?.value || s.srcEbooksDir || "").trim();
+  if (ebooksDirEl && !ebooksDirEl.value) ebooksDirEl.value = library_dir;
+  const q = (epubQueryEl?.value || "").trim();
+
+  if (!epubsListEl) return;
+  epubsListEl.innerHTML = "";
+  if (!library_dir){
+    _setText(epubStatusEl, "Set a library directory in Settings → Sources.");
+    epubsListEl.innerHTML = `<div class="muted">No library configured.</div>`;
+    return;
+  }
+
+  _setText(epubStatusEl, "Loading…");
+
+  const qs = new URLSearchParams();
+  if (q) qs.set("q", q);
+  qs.set("limit", "25");
+  if (library_dir) qs.set("library_dir", library_dir);
+
+  const res = await fetch(`/api/epubs?${qs.toString()}`);
+  const j = await res.json().catch(()=> ({}));
+  const items = j.items || [];
+  _setText(epubStatusEl, `${items.length || 0} result(s)`);
+
+  if (!Array.isArray(items) || items.length === 0){
+    epubsListEl.innerHTML = `<div class="muted">No EPUBs found.</div>`;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  items.forEach((it, idx)=>{
+    const path = (it.path || "").toString();
+    const row = document.createElement("div");
+    row.className = "listItem";
+    row.innerHTML = `<div><div class="itemTitle">${escapeHtml(path)}</div><div class="itemSub">EPUB</div></div><div class="row"><button class="btn" data-epub-path="${escapeAttr(path)}">Ingest</button></div>`;
+    frag.appendChild(row);
+  });
+  epubsListEl.appendChild(frag);
+
+  epubsListEl.querySelectorAll("button[data-epub-path]").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const p = btn.getAttribute("data-epub-path") || "";
+      await ingestEpub(p);
+    });
+  });
+}
+
+async function ingestEpub(path){
+  const s = _ui();
+  const library_dir = (ebooksDirEl?.value || s.srcEbooksDir || "").trim();
+  if (!path) return;
+  _setText(epubStatusEl, "Ingesting…");
+
+  const res = await fetch("/api/epubs/ingest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, library_dir }),
+  });
+  const j = await res.json().catch(()=> ({}));
+  if (!res.ok || j.ok === false){
+    _setText(epubStatusEl, j.error || j.detail || `Failed (${res.status})`);
+    return;
+  }
+  _setText(epubStatusEl, `Ingested (doc_id ${j.doc_id})`);
+  toast("Ingested", path);
+}
+
+async function loadLibraryPage(){
+  syncSourcesFromUiToControls();
+}
+
+kiwixZimDirEl?.addEventListener("change", ()=>{
+  const v = (kiwixZimDirEl.value || "").trim();
+  if (v) _saveUiPatch({ srcZimDir: v });
+  syncSourcesFromUiToControls();
+});
+
+ebooksDirEl?.addEventListener("change", ()=>{
+  const v = (ebooksDirEl.value || "").trim();
+  if (v) _saveUiPatch({ srcEbooksDir: v });
+  syncSourcesFromUiToControls();
+});
+
+srcZimDirEl?.addEventListener("change", ()=>{
+  const v = (srcZimDirEl.value || "").trim();
+  _saveUiPatch({ srcZimDir: v });
+  syncSourcesFromUiToControls();
+});
+
+srcEbooksDirEl?.addEventListener("change", ()=>{
+  const v = (srcEbooksDirEl.value || "").trim();
+  _saveUiPatch({ srcEbooksDir: v });
+  syncSourcesFromUiToControls();
+});
+
+srcKiwixUrlEl?.addEventListener("change", ()=>{
+  const v = (srcKiwixUrlEl.value || "").trim();
+  _saveUiPatch({ srcKiwixUrl: v });
+  syncSourcesFromUiToControls();
+});
+
+btnReloadZims?.addEventListener("click", ()=> loadZims().catch(e=> toast("ZIMs", String(e))));
+btnReloadEpubs?.addEventListener("click", ()=> loadEpubs().catch(e=> toast("EPUBs", String(e))));
+btnIngestTopEpub?.addEventListener("click", async ()=> {
+  const first = epubsListEl?.querySelector("button[data-epub-path]");
+  const p = first?.getAttribute("data-epub-path") || "";
+  if (!p) {
+    toast("EPUB", "No results to ingest.");
+    return;
+  }
+  await ingestEpub(p);
+});
+
+// ---------- Models page helpers ----------
+const btnReloadModels = el("btnReloadModels");
+const modelsListEl = el("modelsList");
+
+async function loadModelsPage(){
+  if (!modelsListEl) return;
+  modelsListEl.innerHTML = "<div class=\"muted\">Loading…</div>";
+  const mj = await api("/api/models");
+  const models = mj.models || [];
+  if (!Array.isArray(models) || models.length === 0){
+    modelsListEl.innerHTML = "<div class=\"muted\">No models found.</div>";
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const name of models){
+    const row = document.createElement("div");
+    row.className = "listItem";
+    row.innerHTML = `<div><div class=\"itemTitle\">${escapeHtml(String(name))}</div><div class=\"itemSub\">Ollama</div></div>`;
+    frag.appendChild(row);
+  }
+  modelsListEl.innerHTML = "";
+  modelsListEl.appendChild(frag);
+}
+
+btnReloadModels?.addEventListener("click", ()=> loadModelsPage().catch(e=> toast("Models", String(e))));
 
 // Buttons (if present)
 document.getElementById("btnSaveSettings")?.addEventListener("click", saveUIState);
@@ -275,30 +675,6 @@ document.addEventListener("input", (e)=>{
   if(e.target?.id && ids.has(e.target.id)){
     applyUIState(readUIState());
   }
-});
-function closeSettings(){
-  settingsOverlay.classList.add("hidden");
-  settingsModal.classList.add("hidden");
-}
-
-btnSettings?.addEventListener("click", openSettings);
-btnSettingsClose?.addEventListener("click", closeSettings);
-settingsOverlay?.addEventListener("click", closeSettings);
-
-document.addEventListener("keydown", (e)=>{
-  if(e.key==="Escape") closeSettings();
-});
-
-document.querySelectorAll(".settingsTab").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    document.querySelectorAll(".settingsTab").forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");
-
-    const key = btn.getAttribute("data-settings-tab");
-    document.querySelectorAll(".settingsPanel").forEach(p=>{
-      p.classList.toggle("hidden", p.getAttribute("data-settings-panel") !== key);
-    });
-  });
 });
 
 
@@ -400,6 +776,11 @@ function escapeHtml(s) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function escapeAttr(s){
+  // safe enough for attribute values we control
+  return escapeHtml(s).replaceAll("`", "&#096;");
 }
 
 // code blocks + inline `code` + newlines
@@ -593,7 +974,7 @@ function hideShortcuts() {
 }
 
 // Help button + shortcuts modal wiring
-btnHelp?.addEventListener("click", showShortcuts);
+// Help is a page now (see router)
 btnShortcutsClose?.addEventListener("click", hideShortcuts);
 shortcutsOverlay?.addEventListener("click", hideShortcuts);
 
@@ -1434,6 +1815,7 @@ async function refreshStatusAndModels() {
       if (!state.model || !models.includes(state.model)) state.model = models[0];
     }
     modelSelect.value = state.model || "";
+    if (currentModelLabel) currentModelLabel.textContent = state.model || "—";
     saveState();
   } catch {
     setStatus(false, "Can't reach backend / Ollama");
@@ -1442,6 +1824,7 @@ async function refreshStatusAndModels() {
 
 modelSelect.addEventListener("change", () => {
   state.model = modelSelect.value;
+  if (currentModelLabel) currentModelLabel.textContent = state.model || "—";
   saveState();
 });
 
@@ -2189,5 +2572,9 @@ async function exportChat(format) {
   loadSlashCommands();
 
   initSettingsTabs();
-  loadUIState();
+  const _s = loadUIState();
+  syncSourcesFromUiToControls(_s);
+
+  initRouter();
 })();
+btnHelp?.addEventListener("click", ()=> navigate("help"));

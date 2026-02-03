@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ollama Web</title>
+  <title>CogniHub</title>
 
   <link rel="icon" href="data:," />
 
@@ -14,11 +14,19 @@
 <body>
   <div id="sidebarOverlay" class="sidebarOverlay hidden"></div>
 
-  <!-- Sidebar: NAV ONLY -->
+  <!-- Sidebar: Navigation + context panels -->
   <aside id="sidebar" class="sidebar closed">
     <div class="sidebarTop">
-      <div class="sidebarBrand">Ollama Web</div>
+      <div class="sidebarBrand">CogniHub</div>
       <button id="btnSidebarClose" class="iconbtn">✕</button>
+    </div>
+
+    <div class="sidebarNav" aria-label="Primary navigation">
+      <button id="navHome" class="navItem" type="button">Home</button>
+      <button id="navChat" class="navItem active" type="button">Chat</button>
+      <button id="navLibrary" class="navItem" type="button">Library</button>
+      <button id="navModels" class="navItem" type="button">Models</button>
+      <button id="navSettingsNav" class="navItem" type="button">Settings</button>
     </div>
 
     <div class="sidebarTabs">
@@ -65,30 +73,140 @@
       <div class="topLeft">
         <button id="btnSidebar" class="iconbtn">☰</button>
         <div class="brandBlock">
-          <div class="brand">Ollama Web</div>
-          <div class="subtitle"><span id="statusDot"></span><span id="statusText">Idle</span></div>
-        </div>
+        <div class="brand">CogniHub</div>
+        <div class="subtitle"><span id="statusDot"></span><span id="statusText">Idle</span></div>
       </div>
+    </div>
 
       <div class="topRight">
-        <select id="modelSelect" class="input"></select>
-        <select id="presetSelect" class="input"></select>
+        <button id="btnChatsPage" class="chip" type="button" title="Chats">Chats</button>
+        <button id="btnModelQuick" class="chip" type="button" title="Model settings">
+          <span class="chipLabel">Model</span>
+          <span id="currentModelLabel" class="chipValue">—</span>
+        </button>
 
-        <label class="checkbox compact"><input id="autoModelToggle" type="checkbox" />Auto</label>
-
-        <button id="btnSettings" class="iconbtn">⚙</button>
-        <button id="btnHelp" class="iconbtn">?</button>
+        <button id="btnSettings" class="iconbtn" title="Settings">⚙</button>
+        <button id="btnHelp" class="iconbtn" title="Help">?</button>
         <button id="btnTheme" class="iconbtn">🌓</button>
       </div>
     </header>
 
     <main class="main">
-      <div id="chat" class="chat"></div>
-      <div id="scrollHint" class="scroll-hint hidden">New messages</div>
-      <button id="scrollToBottomBtn" class="scroll-to-bottom-btn hidden">↓ <span id="scrollCount"></span></button>
+      <section id="pageHome" class="page">
+        <div class="pageHead">
+          <h1 class="pageTitle">Welcome to CogniHub</h1>
+          <div class="pageLead">Local-first chat + tools + offline knowledge. Pick where to start.</div>
+        </div>
+
+        <div class="cardGrid">
+          <div class="card">
+            <div class="cardTitle">Start a chat</div>
+            <div class="cardBody">Create a new chat, or jump back into the last one.</div>
+            <div class="cardActions">
+              <button id="homeNewChat" class="btn primary" type="button">New chat</button>
+              <button id="homeGoChat" class="btn" type="button">Open chat</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="cardTitle">Library</div>
+            <div class="cardBody">Upload docs, browse Kiwix ZIMs, and ingest EPUBs for RAG.</div>
+            <div class="cardActions">
+              <button id="homeGoLibrary" class="btn" type="button">Open library</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="cardTitle">Settings</div>
+            <div class="cardBody">Configure chat defaults, tools, sources, and the UI.</div>
+            <div class="cardActions">
+              <button id="homeGoSettings" class="btn" type="button">Open settings</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="pageChat" class="page hidden">
+        <div id="chat" class="chat"></div>
+        <div id="scrollHint" class="scroll-hint hidden">New messages</div>
+        <button id="scrollToBottomBtn" class="scroll-to-bottom-btn hidden">↓ <span id="scrollCount"></span></button>
+      </section>
+
+      <section id="pageLibrary" class="page hidden">
+        <div class="pageHead">
+          <h1 class="pageTitle">Library</h1>
+          <div class="pageLead">Offline + personal sources. Docs are in the sidebar; ZIMs and EPUBs live here.</div>
+        </div>
+
+        <div class="cardGrid">
+          <div class="card">
+            <div class="cardTitle">Kiwix ZIMs</div>
+            <div class="cardBody">List local ZIM files from a directory.</div>
+            <div class="row">
+              <input id="kiwixZimDir" class="input" placeholder="e.g. ~/zims or /path/to/zims" />
+              <button id="btnReloadZims" class="btn" type="button">Reload</button>
+            </div>
+            <div id="zimsList" class="list"></div>
+          </div>
+
+          <div class="card">
+            <div class="cardTitle">EPUB (Calibre)</div>
+            <div class="cardBody">Search your Calibre library and ingest books into RAG.</div>
+            <div class="row">
+              <input id="ebooksDir" class="input" placeholder="e.g. ~/Ebooks or /path/to/ebooks" />
+            </div>
+            <div class="row">
+              <input id="epubQuery" class="input" placeholder="Search by path / author / title" />
+              <button id="btnReloadEpubs" class="btn" type="button">Search</button>
+            </div>
+            <div class="row">
+              <button id="btnIngestTopEpub" class="btn primary" type="button">Ingest top match</button>
+              <span id="epubStatus" class="muted"></span>
+            </div>
+            <div id="epubsList" class="list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="pageModels" class="page hidden">
+        <div class="pageHead">
+          <h1 class="pageTitle">Models</h1>
+          <div class="pageLead">Available Ollama models from your server.</div>
+        </div>
+        <div class="card">
+          <div class="row">
+            <button id="btnReloadModels" class="btn" type="button">Refresh</button>
+          </div>
+          <div id="modelsList" class="list"></div>
+        </div>
+      </section>
+
+      <section id="pageSettings" class="page hidden">
+        <div class="pageHead">
+          <h1 class="pageTitle">Settings</h1>
+          <div class="pageLead">Everything configurable lives here. Changes are stored locally unless noted.</div>
+        </div>
+        <div id="settingsMount"></div>
+      </section>
+
+      <section id="pageChats" class="page hidden">
+        <div class="pageHead">
+          <h1 class="pageTitle">Chats</h1>
+          <div class="pageLead">Search, organize, export, and manage chats without the sidebar.</div>
+        </div>
+        <div id="chatsMount"></div>
+      </section>
+
+      <section id="pageHelp" class="page hidden">
+        <div class="pageHead">
+          <h1 class="pageTitle">Help</h1>
+          <div class="pageLead">Shortcuts, slash commands, and quick diagnostics.</div>
+        </div>
+        <div id="helpMount"></div>
+      </section>
     </main>
 
-    <div class="composer">
+    <div id="composer" class="composer">
       <div id="slashPalette" class="slashPalette hidden"></div>
       <textarea id="prompt" class="input" rows="2" placeholder="Type a message…"></textarea>
       <div class="composerBtns">
@@ -99,7 +217,7 @@
     </div>
   </div>
 
-<!-- Settings modal (fancy) -->
+<!-- Settings (mounted into Settings page at runtime) -->
 <div id="settingsOverlay" class="modalOverlay hidden"></div>
 
 <div id="settingsModal" class="modal hidden settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
@@ -118,6 +236,7 @@
       <button class="settingsTab active" type="button" data-settings-tab="ui" role="tab" aria-selected="true">UI</button>
       <button class="settingsTab" type="button" data-settings-tab="chat" role="tab" aria-selected="false">Chat</button>
       <button class="settingsTab" type="button" data-settings-tab="model" role="tab" aria-selected="false">Model</button>
+      <button class="settingsTab" type="button" data-settings-tab="sources" role="tab" aria-selected="false">Sources</button>
       <button class="settingsTab" type="button" data-settings-tab="privacy" role="tab" aria-selected="false">Privacy</button>
     </div>
 
@@ -276,6 +395,37 @@
       <section class="settingsPanel hidden" data-settings-panel="model">
         <div class="settingsCard">
           <div class="cardHead">
+            <div class="cardTitle">Model selection</div>
+            <div class="cardHint">Choose a model, or let CogniHub decide automatically.</div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <label for="modelSelect">Model</label>
+              <select id="modelSelect" class="input"></select>
+            </div>
+
+            <div class="field">
+              <label for="presetSelect">Preset</label>
+              <select id="presetSelect" class="input"></select>
+              <div class="help">Applies recommended generation + RAG defaults.</div>
+            </div>
+          </div>
+
+          <div class="settingRow">
+            <label class="switch">
+              <input id="autoModelToggle" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+            <div class="settingText">
+              <div class="settingName">Auto model selection</div>
+              <div class="settingDesc">Let the backend pick a model per message.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settingsCard">
+          <div class="cardHead">
             <div class="cardTitle">Personality</div>
             <div class="cardHint">This affects the assistant's behavior for *this app*.</div>
           </div>
@@ -374,6 +524,36 @@
           <div class="row">
             <button id="btnExportAllChats" class="btn">Export all chats</button>
             <button id="btnWipeLocal" class="btn danger">Wipe local data</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Sources -->
+      <section class="settingsPanel hidden" data-settings-panel="sources">
+        <div class="settingsCard">
+          <div class="cardHead">
+            <div class="cardTitle">Offline sources</div>
+            <div class="cardHint">Used by the Library page. Defaults match your server, but you can override locally.</div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <label for="srcZimDir">ZIM directory</label>
+              <input id="srcZimDir" class="input" type="text" placeholder="e.g. ~/zims or /path/to/zims" />
+              <div class="help">Used by Kiwix ZIM listing.</div>
+            </div>
+
+            <div class="field">
+              <label for="srcEbooksDir">Calibre library</label>
+              <input id="srcEbooksDir" class="input" type="text" placeholder="e.g. ~/Ebooks or /path/to/ebooks" />
+              <div class="help">Used by EPUB search + ingest.</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="srcKiwixUrl">Kiwix URL</label>
+            <input id="srcKiwixUrl" class="input" type="text" placeholder="http://127.0.0.1:8081" />
+            <div class="help">Optional override (if you run multiple kiwix-serve instances).</div>
           </div>
         </div>
       </section>
