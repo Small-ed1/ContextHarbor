@@ -186,10 +186,10 @@ if len(r.text) < 1000:  # Suspiciously small response
 ### **Current State Tests**
 ```bash
 # Test web search directly
-python -c "
-import asyncio
-from src.cognihub.services.web_search import ddg_search
-import httpx
+ python -c "
+ import asyncio
+ from cognihub.services.web_search import ddg_search
+ import httpx
 
 async def test():
     async with httpx.AsyncClient() as http:

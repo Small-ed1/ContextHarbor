@@ -4,21 +4,24 @@ This guide explains how to run CogniHub on Windows.
 
 ## Prerequisites
 
-- Python 3.8+ installed
+- Python 3.14+ installed
 - Ollama installed (download from https://ollama.ai/)
 - Git (optional, for cloning)
 
 ## Installation
 
 1. Clone or download the repository
-2. Install Python dependencies:
+2. Create a virtual environment and install the workspace packages:
    ```
-   pip install -r requirements.txt
+   python -m venv .venv
+   .venv\Scripts\activate
+   python -m pip install -U pip
+   python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
    ```
 3. Install Ollama and pull required models:
    ```
    ollama pull llama3.1
-   ollama pull embeddinggemma
+   ollama pull nomic-embed-text
    ```
 
 ## Running the Application
@@ -66,15 +69,15 @@ This guide explains how to run CogniHub on Windows.
 
 2. Start FastAPI (in another terminal):
    ```
-   uvicorn app:app --host 0.0.0.0 --port 8000
+   uvicorn cognihub.app:app --host 0.0.0.0 --port 8000
    ```
 
 3. Open web UI at http://localhost:8000
 
 4. Or run TUI:
-    ```
-    python src/cognihub/tui/cognihub_tui.py
-    ```
+     ```
+     cognihub-tui
+     ```
 
 ## PowerShell Script Commands
 
@@ -96,9 +99,9 @@ This guide explains how to run CogniHub on Windows.
 
 ## Directory Structure
 
-- `src/` - Python source code
-- `src/cognihub/static/` - Static web files
-- `~/.cognihub/data/` - SQLite databases (created automatically)
+- `packages/` - Python packages
+- `packages/cognihub/web/static/` - Static web files
+- `data/` - SQLite databases (created automatically)
 - `docs/` - Documentation
 - `scripts/` - Batch scripts
 

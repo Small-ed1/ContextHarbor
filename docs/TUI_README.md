@@ -43,13 +43,21 @@ Ctrl+T        Switch to next tab (Chats/Help)
 ## Usage
 
 ### Start the TUI
-```bash
-python src/cognihub/tui/cognihub_tui.py
-```
 
-Or use Python directly:
+Install the workspace packages (recommended):
+
 ```bash
-python3 src/cognihub/tui/cognihub_tui.py
+python -m venv .venv
+
+# Activate the venv
+# - Windows (PowerShell): .venv\\Scripts\\Activate.ps1
+# - Windows (cmd.exe):   .venv\\Scripts\\activate.bat
+# - macOS/Linux:         source .venv/bin/activate
+
+python -m pip install -U pip
+python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
+
+cognihub-tui
 ```
 
 ### Requirements
@@ -62,7 +70,7 @@ sudo systemctl start cognihub
 
 Or start manually:
 ```bash
-uvicorn src.cognihub.app:app --reload --host 0.0.0.0 --port 8000
+uvicorn cognihub.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Configuration

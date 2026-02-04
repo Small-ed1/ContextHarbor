@@ -4,24 +4,24 @@ All servers can run in the background without active monitoring. Two options are
 
 ## Option 1: Manual Control (Recommended for Development)
 
-Use the `servers.sh` script for full manual control:
+Use the `scripts/servers.sh` script for full manual control:
 
 ```bash
 # Start all servers
-./servers.sh start
+./scripts/servers.sh start
 
 # Stop all servers
-./servers.sh stop
+./scripts/servers.sh stop
 
 # Restart all servers
-./servers.sh restart
+./scripts/servers.sh restart
 
 # Check status
-./servers.sh status
+./scripts/servers.sh status
 
 # View logs
-./servers.sh logs fastapi
-./servers.sh logs ollama
+./scripts/servers.sh logs fastapi
+./scripts/servers.sh logs ollama
 ```
 
 **Features:**
@@ -36,13 +36,13 @@ Use the `servers.sh` script for full manual control:
 Install as systemd service for automatic startup:
 
 ```bash
-sudo ./install-service.sh
+ sudo ./scripts/install-service.sh
 
 # Then manage with systemctl:
-sudo systemctl start ollama-web
-sudo systemctl stop ollama-web
-sudo systemctl status ollama-web
-sudo journalctl -u ollama-web -f
+sudo systemctl start cognihub
+sudo systemctl stop cognihub
+sudo systemctl status cognihub
+sudo journalctl -u cognihub -f
 ```
 
 **Features:**
@@ -60,30 +60,33 @@ Both servers are currently running:
 
 ## Log Files
 
-- `fastapi.log` - FastAPI server output
-- `ollama.log` - Ollama server output
+- `logs/fastapi.log` - FastAPI server output
+- `logs/ollama.log` - Ollama server output
 
 View logs anytime:
 ```bash
-tail -f fastapi.log
-tail -f ollama.log
+tail -f logs/fastapi.log
+tail -f logs/ollama.log
 ```
 
 ## Quick Start
 
 1. Ensure dependencies are installed:
    ```bash
-   pip install -r requirements.txt
+   python3 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install -U pip
+   python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
    ```
 
 2. Pull embedding model for RAG:
    ```bash
-   ollama pull embeddinggemma
+   ollama pull nomic-embed-text
    ```
 
 3. Start servers:
    ```bash
-   ./servers.sh start
+   ./scripts/servers.sh start
    ```
 
 4. Access the app: http://localhost:8000

@@ -4,8 +4,13 @@ __pycache__/
 *.pid
 *.sqlite3
 uvicorn.*
-logs/
-data/*.sqlite3
+
+# Runtime directories (keep folders, ignore contents)
+logs/*
+!logs/.gitkeep
+data/*
+!data/.gitkeep
+
 .env
 .env.local
 *.key
@@ -21,3 +26,6 @@ src/*.egg-info/
 .venv/
 .mypy_cache/
 .pytest_cache/
+
+# Legacy staging dir (safe to delete locally)
+monorepo/

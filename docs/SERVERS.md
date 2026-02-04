@@ -1,25 +1,25 @@
 # Server Management
 
-All servers can be started in the background without monitoring using the `servers.sh` script.
+All servers can be started in the background without monitoring using the `scripts/servers.sh` script.
 
 ## Usage
 
 ```bash
 # Start all servers (FastAPI + Ollama)
-./servers.sh start
+./scripts/servers.sh start
 
 # Stop all servers
-./servers.sh stop
+./scripts/servers.sh stop
 
 # Restart all servers
-./servers.sh restart
+./scripts/servers.sh restart
 
 # Check server status
-./servers.sh status
+./scripts/servers.sh status
 
 # View logs
-./servers.sh logs fastapi    # View FastAPI logs
-./servers.sh logs ollama     # View Ollama logs
+./scripts/servers.sh logs fastapi    # View FastAPI logs
+./scripts/servers.sh logs ollama     # View Ollama logs
 ```
 
 ## Servers
@@ -30,8 +30,8 @@ All servers can be started in the background without monitoring using the `serve
 ## Logs
 
 Logs are written to:
-- `fastapi.log` - FastAPI server logs
-- `ollama.log` - Ollama server logs
+- `logs/fastapi.log` - FastAPI server logs
+- `logs/ollama.log` - Ollama server logs
 
 ## Process Management
 
@@ -41,19 +41,22 @@ The script manages PIDs automatically:
 
 ## Setup
 
-1. Install dependencies:
+1. Create a venv and install the workspace packages:
    ```bash
-   pip install -r requirements.txt
+   python3 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install -U pip
+   python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
    ```
 
 2. Pull an embedding model for RAG:
    ```bash
-   ollama pull embeddinggemma
+   ollama pull nomic-embed-text
    ```
 
 3. Start servers:
    ```bash
-   ./servers.sh start
+   ./scripts/servers.sh start
    ```
 
 ## Notes

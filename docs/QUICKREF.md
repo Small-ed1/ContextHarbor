@@ -3,22 +3,22 @@
 ## Server Management Script
 
 ```bash
-./servers.sh start    # Start all servers
-./servers.sh stop     # Stop all servers
-./servers.sh restart  # Restart all servers
-./servers.sh status   # Check status
-./servers.sh logs fastapi   # View FastAPI logs
-./servers.sh logs ollama    # View Ollama logs
+./scripts/servers.sh start    # Start all servers
+./scripts/servers.sh stop     # Stop all servers
+./scripts/servers.sh restart  # Restart all servers
+./scripts/servers.sh status   # Check status
+./scripts/servers.sh logs fastapi   # View FastAPI logs
+./scripts/servers.sh logs ollama    # View Ollama logs
 ```
 
 ## Systemd Service (Optional)
 
 ```bash
-sudo ./install-service.sh    # Install service
-sudo systemctl start ollama-web
-sudo systemctl stop ollama-web
-sudo systemctl status ollama-web
-sudo journalctl -u ollama-web -f
+sudo ./scripts/install-service.sh    # Install service
+sudo systemctl start cognihub
+sudo systemctl stop cognihub
+sudo systemctl status cognihub
+sudo journalctl -u cognihub -f
 ```
 
 ## Access
@@ -28,8 +28,12 @@ sudo journalctl -u ollama-web -f
 
 ## Logs
 
-- FastAPI: `tail -f fastapi.log`
-- Ollama: `tail -f ollama.log`
+- FastAPI: `tail -f logs/fastapi.log`
+- Ollama: `tail -f logs/ollama.log`
+
+Paths:
+- `logs/fastapi.log`
+- `logs/ollama.log`
 
 ## Current Status
 
