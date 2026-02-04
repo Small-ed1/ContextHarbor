@@ -17,6 +17,8 @@ class ToolSpec:
     side_effect: SideEffect = "read_only"
     requires_confirmation: bool = False
     enabled: bool = True
+    output_model: Type[BaseModel] | None = None
+    error_codes: list[str] | None = None
 
 
 class ToolRegistry:
@@ -44,6 +46,35 @@ class ToolRegistry:
                         "requires_confirmation": str(t.requires_confirmation),
                     }
                 )
+        return out
+
+    def list_schemas(self) -> list[dict[str, Any]]:
+        """Stable, user-visible tool schema list for discovery."""
+        out: list[dict[str, Any]] = []
+        for t in self._tools.values():
+            if not t.enabled:
+                continue
+
+            input_schema: dict[str, Any] = {"type": "object", "properties": {}, "required": []}
+            if t.args_model is not None:
+                input_schema = sanitize_parameters(t.args_model.model_json_schema())
+
+            output_schema: dict[str, Any] = {"type": "object"}
+            if t.output_model is not None:
+                output_schema = sanitize_parameters(t.output_model.model_json_schema())
+
+            out.append(
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "side_effect": t.side_effect,
+                    "requires_confirmation": bool(t.requires_confirmation),
+                    "input_schema": input_schema,
+                    "output_schema": output_schema,
+                    "error_codes": t.error_codes or [],
+                }
+            )
+
         return out
 
     def build_ollama_tools(self) -> List[Dict[str, Any]]:

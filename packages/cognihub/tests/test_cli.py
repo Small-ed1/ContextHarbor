@@ -4,9 +4,9 @@ This module tests the CLI functionality including
 one-shot mode, REPL mode, and configuration management.
 """
 
+import os
+
 import pytest
-import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 
@@ -39,36 +39,36 @@ class TestCogniHubCLI:
         assert cli.session is None or cli.session.is_closed
     
     def test_config_load_default(self, cli):
-        """Test loading default configuration."""
-        config = cli.load_config()
-        
-        assert "host" in config
-        assert "port" in config
-        assert "model" in config
-        assert "stream" in config
-        assert config["host"] == "localhost"
-        assert config["port"] == 8000
-        assert config["model"] == "llama3.1"
-        assert config["stream"] is True
+        """Test loading configuration from TOML."""
+        config = cli.load_core_config()
+
+        assert config["host"]
+        assert config["port"]
+        assert config["model"]
     
     def test_config_save_and_load(self, cli, tmp_path):
-        """Test saving and loading configuration."""
-        # Mock home directory to use temp path
-        with patch('pathlib.Path.home', return_value=tmp_path):
-            config_data = {
-                "host": "example.com",
-                "port": 9000,
-                "model": "custom-model",
-                "stream": False
-            }
-            
-            cli.save_config(config_data)
-            loaded_config = cli.load_config()
-            
-            assert loaded_config["host"] == "example.com"
-            assert loaded_config["port"] == 9000
-            assert loaded_config["model"] == "custom-model"
-            assert loaded_config["stream"] is False
+        """Test reading updated TOML configuration."""
+        cfg_dir = tmp_path / "cognihub_cfg"
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+
+        os.environ["COGNIHUB_CONFIG_DIR"] = str(cfg_dir)
+
+        from cognihub import config as ch_config
+
+        ch_config.ensure_default_config_files(cfg_dir)
+
+        # Edit core.toml directly (authoritative config).
+        core_path = cfg_dir / "core.toml"
+        raw = core_path.read_text(encoding="utf-8")
+        raw = raw.replace('host = "127.0.0.1"', 'host = "example.com"')
+        raw = raw.replace('port = 8000', 'port = 9000')
+        raw = raw.replace('chat_model = "llama3.1:latest"', 'chat_model = "custom-model"')
+        core_path.write_text(raw, encoding="utf-8")
+
+        loaded = cli.load_core_config()
+        assert loaded["host"] == "example.com"
+        assert loaded["port"] == 9000
+        assert loaded["model"] == "custom-model"
     
     @pytest.mark.asyncio
     async def test_chat_once_success(self, cli):

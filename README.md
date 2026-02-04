@@ -28,10 +28,29 @@ python -m pip install -U pip
 python -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
 
 python -m pytest
-uvicorn cognihub.app:app --reload --host 127.0.0.1 --port 8000
+
+# Start CogniHub (creates default config on first run)
+cognihub run
 ```
 
 Open `http://127.0.0.1:8000`.
+
+## Configuration (v1.0)
+
+CogniHub uses TOML config files (single authoritative format):
+
+- `core.toml` (models, ports, limits, paths)
+- `tools.toml` (enable/disable tools + tool plugins)
+- `search.toml` (web search provider + rate limits)
+
+Default config directory:
+
+- Windows: `%APPDATA%\\cognihub`
+- macOS/Linux: `~/.config/cognihub`
+
+Override with `COGNIHUB_CONFIG_DIR=/path/to/dir`.
+
+See `docs/how-cognihub-works.md` for an end-to-end overview.
 
 ## Web UI
 
@@ -52,19 +71,7 @@ Most behavior is configurable under Settings; sources are synced between Setting
 
 CogniHub can use offline sources (Kiwix ZIMs, EPUB libraries) for RAG.
 
-Backend env vars (optional):
-
-```bash
-OLLAMA_URL=http://127.0.0.1:11434
-KIWIX_URL=http://127.0.0.1:8081
-KIWIX_ZIM_DIR=<path-to-your-zims>
-EBOOKS_DIR=<path-to-your-ebooks>
-EMBED_MODEL=nomic-embed-text
-DEFAULT_CHAT_MODEL=llama3.1
-```
-
-UI-side overrides (stored in browser localStorage):
-- Settings -> Sources
+Configure paths/endpoints in `core.toml` (and, for now, a few optional env vars are still honored in some modules; treat TOML as authoritative).
 
 ## Setup Wizard
 
@@ -93,7 +100,7 @@ ollama pull llama3.1
 ollama pull nomic-embed-text
 ```
 
-If you use different models, set them via `DEFAULT_CHAT_MODEL` and `EMBED_MODEL`.
+If you use different models, set them in `core.toml` under `[models]`.
 
 ### Kiwix (Offline ZIMs)
 
@@ -134,13 +141,10 @@ The UI will let you search and ingest from Settings -> Sources and the Library p
 
 ### Web Search (Optional)
 
-Some features can use web search providers.
-If you run a local SearxNG instance, set:
+Web search is controlled by `search.toml`:
 
-```bash
-SEARXNG_URL=http://localhost:8080/search
-COGNIHUB_SEARCH_PROVIDER=searxng
-```
+- Set `[search].enabled = false` to disable entirely
+- Provider is `[search].provider = "ddg"` (single supported provider for v1.0)
 
 ## Doctor / Sanity Checks
 

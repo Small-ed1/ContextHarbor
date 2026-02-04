@@ -82,4 +82,11 @@ def get_search_cache() -> SearchCache:
 
 def get_rate_limiter() -> RateLimiter:
     """Get the global rate limiter instance."""
+    try:
+        from .. import config as ch_config
+
+        # Keep runtime-configurable without re-instantiating.
+        _rate_limiter.min_interval = float(ch_config.config.search_min_interval_seconds)
+    except Exception:
+        pass
     return _rate_limiter

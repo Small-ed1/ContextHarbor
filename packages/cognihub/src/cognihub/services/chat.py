@@ -12,7 +12,6 @@ from .models import ModelRegistry
 from .retrieval import DocRetrievalProvider, KiwixRetrievalProvider, WebRetrievalProvider, RetrievalResult
 from .rag_routing import route_rag
 from .rerank import rerank_results
-from .tooling import chat_with_tools
 from .web_ingest import WebIngestQueue
 from .hybrid_router import smart_chat, get_router
 
@@ -88,6 +87,7 @@ async def stream_chat(
     request=None,  # FastAPI request object for tool access
     chat_id: str | None = None,
     message_id: str | None = None,
+    confirmation_token: str | None = None,
 ) -> AsyncGenerator[str, None]:
     if not messages or not model:
         raise ValueError("Messages and model are required")
@@ -246,47 +246,35 @@ async def stream_chat(
     async def run():
         try:
             answer_model = model
-            # Check if we have tools available and should use tool contract
-            if request and hasattr(request.app.state, 'tool_executor'):
-                # Use tool contract system
-                from .tool_chat import chat_with_tool_contract
+            if not request or not hasattr(request.app.state, "tool_executor"):
+                raise RuntimeError("Tool system not initialized")
 
-                tool_executor = request.app.state.tool_executor
-                tool_registry = request.app.state.tool_registry
-                tools_for_prompt = tool_registry.list_for_prompt()
+            from .tool_chat import chat_with_tool_contract
 
-                # Extract user message for tool contract
-                last_user = next((m for m in reversed(clean_messages) if m["role"] == "user"), None)
-                user_text = (last_user or {}).get("content", "")
+            tool_executor = request.app.state.tool_executor
+            tool_registry = request.app.state.tool_registry
+            tools_for_prompt = tool_registry.list_for_prompt()
 
-                content = await chat_with_tool_contract(
-                    http=http,
-                    ollama_url=ollama_url,
-                    model=model,
-                    executor=tool_executor,
-                    tools_for_prompt=tools_for_prompt,
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    user_text=user_text,
-                    messages=clean_messages,
-                    options=options,
-                    keep_alive=keep_alive,
-                    max_loops=3,
-                )
-            else:
-                # Fallback to original tool system
-                content = await chat_with_tools(
-                    http=http,
-                    ollama_url=ollama_url,
-                    model=model,
-                    messages=clean_messages,
-                    options=options,
-                    keep_alive=keep_alive,
-                    embed_model=embed_model,
-                    ingest_queue=web_ingest,
-                    kiwix_url=kiwix_url,
-                    emit=emit,
-                )
+            # Extract user message for tool contract
+            last_user = next((m for m in reversed(clean_messages) if m["role"] == "user"), None)
+            user_text = (last_user or {}).get("content", "")
+
+            content = await chat_with_tool_contract(
+                http=http,
+                ollama_url=ollama_url,
+                model=model,
+                executor=tool_executor,
+                tools_for_prompt=tools_for_prompt,
+                chat_id=chat_id,
+                message_id=message_id,
+                user_text=user_text,
+                messages=clean_messages,
+                options=options,
+                keep_alive=keep_alive,
+                max_loops=3,
+                confirmation_token=confirmation_token,
+                emit=emit,
+            )
 
             if rag.get("enabled") and content and bool(rag.get("synth")):
                 synth_model = (

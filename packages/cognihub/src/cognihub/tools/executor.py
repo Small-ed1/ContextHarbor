@@ -59,9 +59,14 @@ class ToolExecutor:
 
         try:
             results = await asyncio.wait_for(run_with_global_timeout(), timeout=self.global_timeout_s)
-            return {"type": "tool_result", "id": request_id or "server", "results": results}
+            return {"type": "tool_result", "id": request_id or "server", "results": results, "error": None}
         except asyncio.TimeoutError:
-            return {"type": "tool_result", "id": request_id or "server", "results": [], "error": "global_timeout"}
+            return {
+                "type": "tool_result",
+                "id": request_id or "server",
+                "results": [],
+                "error": {"code": "global_timeout", "message": "tool batch exceeded global timeout"},
+            }
 
     async def _run_one(
         self,
@@ -73,37 +78,48 @@ class ToolExecutor:
     ) -> Dict[str, Any]:
         spec = self.registry.get(call.name)
         if not spec or not spec.enabled:
-            return self._result(call, ok=False, data={"error": "tool_not_found_or_disabled"})
+            return self._result(call, ok=False, data=None, error={"code": "tool_not_found", "message": "tool not found or disabled"})
 
         # confirmation gating
         if spec.requires_confirmation and confirmation_token != "CONFIRMED":
-            return self._result(call, ok=False, data={"error": "confirmation_required"})
+            return self._result(call, ok=False, data=None, error={"code": "confirmation_required", "message": "confirmation token required"})
 
         # validate args against tool schema
         try:
             args_obj = spec.args_model.model_validate(call.arguments)
         except ValidationError as e:
-            return self._result(call, ok=False, data={"error": "invalid_arguments", "details": e.errors()})
+            return self._result(
+                call,
+                ok=False,
+                data=None,
+                error={"code": "invalid_arguments", "message": "arguments failed schema validation", "details": e.errors()},
+            )
 
         start = time.perf_counter()
         ok = True
-        data: Dict[str, Any] = {}
+        data: Dict[str, Any] | None = None
+        err: Dict[str, Any] | None = None
         meta: Dict[str, Any] = {}
 
         try:
             data = await asyncio.wait_for(spec.handler(args_obj), timeout=self.timeout_s)
         except asyncio.TimeoutError:
             ok = False
-            data = {"error": "timeout"}
+            err = {"code": "timeout", "message": "tool execution timed out"}
         except Exception as ex:
+            from .exceptions import ToolError
+
             ok = False
-            data = {"error": "tool_failed", "detail": str(ex)}
+            if isinstance(ex, ToolError):
+                err = {"code": ex.code, "message": str(ex), "details": getattr(ex, "details", {})}
+            else:
+                err = {"code": "tool_failed", "message": "tool execution failed", "detail": str(ex)}
 
         ms = int((time.perf_counter() - start) * 1000)
         meta["ms"] = ms
 
         # cap + hash output for logs
-        raw = json.dumps(data, ensure_ascii=False)
+        raw = json.dumps({"ok": ok, "data": data, "error": err}, ensure_ascii=False)
         excerpt = raw[: self.max_output_chars]
         sha = hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -119,13 +135,22 @@ class ToolExecutor:
             meta_json=json.dumps(meta, ensure_ascii=False),
         )
 
-        return self._result(call, ok=ok, data=data, meta=meta)
+        return self._result(call, ok=ok, data=data, meta=meta, error=err)
 
-    def _result(self, call: ToolCall, *, ok: bool, data: Dict[str, Any], meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _result(
+        self,
+        call: ToolCall,
+        *,
+        ok: bool,
+        data: Dict[str, Any] | None,
+        meta: Optional[Dict[str, Any]] = None,
+        error: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         return {
             "id": call.id,
             "name": call.name,
             "ok": ok,
             "data": data,
+            "error": error,
             "meta": meta or {},
         }

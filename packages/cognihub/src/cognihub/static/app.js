@@ -277,7 +277,7 @@ document.addEventListener("input", (e)=>{
 const ragToggle = el("ragToggle");
 const topKEl = el("topK");
 const mmrToggle = el("mmrToggle");
-const autoModelToggle = el("autoModelToggle");
+// Auto model selection removed (v1.0)
 const presetSelect = el("presetSelect");
 
 const scrollHint = el("scrollHint");
@@ -486,7 +486,6 @@ function renderLiteMarkdown(text) {
 
 function saveState() {
   const ui = {
-    auto_model: !!autoModelToggle?.checked,
     preset: presetSelect?.value || ""
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -510,7 +509,6 @@ function loadState() {
     state.lastResearchRunId = obj.lastResearchRunId || state.lastResearchRunId || null;
 
     const ui = obj.ui || {};
-    if (autoModelToggle && typeof ui.auto_model === "boolean") autoModelToggle.checked = ui.auto_model;
     if (presetSelect && typeof ui.preset === "string") presetSelect.value = ui.preset;
   } catch {}
 }
@@ -1536,20 +1534,7 @@ function buildMessagesForRequest() {
   return msgs.concat(recent);
 }
 
-async function decideModel(query, ragEnabled) {
-  const res = await fetch("/api/decide_model", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, rag_enabled: !!ragEnabled }),
-  });
-  const j = await res.json();
-  if (j?.model && Array.from(modelSelect.options).some(o => o.value === j.model)) {
-    state.model = j.model;
-    modelSelect.value = j.model;
-    saveState();
-  }
-  return j;
-}
+// decideModel removed (v1.0: no automatic model routing)
 
 /* ---------------- rag toggle (DB) ---------------- */
 
@@ -1880,9 +1865,7 @@ async function send() {
   setStatus(true, stageText("pulling_from_disk"));
 
   const ragEnabled = !!ragToggle?.checked;
-  if (autoModelToggle?.checked) {
-    try { await decideModel(text, ragEnabled); } catch {}
-  }
+  // v1.0: always use the selected model; no automatic routing.
 
   const docSel = state.prefs?.doc_ids ?? null;
 

@@ -5,11 +5,14 @@ import os
 import httpx
 import subprocess
 import shlex
+from pathlib import Path
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
 from .registry import ToolRegistry, ToolSpec
+from .exceptions import ToolError
 from ..services.tooling import ToolDocSearchReq, ToolWebSearchReq, tool_doc_search, tool_web_search
+from .. import config as ch_config
 
 
 class WebSearchArgs(BaseModel):
@@ -21,25 +24,34 @@ class DocSearchArgs(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
 
 
+class LocalFileReadArgs(BaseModel):
+    path: str = Field(min_length=1, max_length=1024)
+
+
 class ShellExecArgs(BaseModel):
     command: str = Field(min_length=1, max_length=512)
-    cwd: Optional[str] = Field(default=None, max_length=256)
+    cwd: Optional[str] = Field(default=None, max_length=1024)
     timeout: int = Field(default=30, ge=1, le=300)
 
 
-class KiwixListZimsArgs(BaseModel):
-    zim_dir: Optional[str] = Field(default=None, max_length=512)
+class WebSearchOut(BaseModel):
+    items: list[dict[str, Any]]
 
 
-class EpubListArgs(BaseModel):
-    q: Optional[str] = Field(default=None, max_length=256)
-    limit: int = Field(default=25, ge=1, le=200)
+class DocSearchOut(BaseModel):
+    chunks: list[dict[str, Any]]
 
 
-class EpubIngestArgs(BaseModel):
-    path: Optional[str] = Field(default=None, max_length=1024)
-    q: Optional[str] = Field(default=None, max_length=256)
-    limit: int = Field(default=1, ge=1, le=20)
+class LocalFileReadOut(BaseModel):
+    path: str
+    truncated: bool
+    content: str
+
+
+class ShellExecOut(BaseModel):
+    returncode: int
+    stdout: str
+    stderr: str
 
 
 def register_builtin_tools(
@@ -51,48 +63,39 @@ def register_builtin_tools(
     kiwix_url: Optional[str] = None,
 ) -> None:
 
-    async def web_search_handler(args: WebSearchArgs) -> Dict[str, Any]:
-        try:
-            req = ToolWebSearchReq(query=args.q)
-            result = await tool_web_search(
-                req,
-                http=http,
-                ingest_queue=ingest_queue,
-                embed_model=embed_model,
-                kiwix_url=kiwix_url,
-            )
+    cfg = ch_config.config
+    enabled = set(cfg.enabled_tools or [])
 
-            items = []
-            # tool_web_search returns results in "results" key, not "pages"
-            for p in result.get("results", []):
-                items.append({
+    async def web_search_handler(args: WebSearchArgs) -> Dict[str, Any]:
+        if not cfg.search_enabled:
+            raise ToolError("web search is disabled by config", code="search_disabled")
+
+        req = ToolWebSearchReq(query=args.q)
+        result = await tool_web_search(
+            req,
+            http=http,
+            ingest_queue=ingest_queue,
+            embed_model=embed_model,
+            kiwix_url=kiwix_url,
+        )
+
+        items = []
+        for p in result.get("results", []):
+            items.append(
+                {
                     "title": p.get("title", ""),
                     "url": p.get("url", ""),
                     "snippet": p.get("snippet", ""),
-                })
-            
-            # Check for empty results and treat as error if provider indicates blocking
-            if not items:
-                # Check if we have provider info indicating failure
-                if hasattr(result, 'get') and result.get('provider_error'):
-                    return {
-                        "items": [],
-                        "error": f"web_search failed: {result['provider_error']}"
-                    }
-                else:
-                    return {
-                        "items": [], 
-                        "error": "web_search returned no results (provider may be blocked)"
-                    }
-            
-            return {"items": items}
-            
-        except Exception as e:
-            # Convert any exception to structured error response
-            return {
-                "items": [],
-                "error": f"web_search failed: {str(e)}"
-            }
+                }
+            )
+
+        if not items:
+            provider_error = result.get("provider_error") if isinstance(result, dict) else None
+            if provider_error:
+                raise ToolError(f"web search failed: {provider_error}", code="search_failed")
+            raise ToolError("web search returned no results", code="search_failed")
+
+        return {"items": items}
 
     async def doc_search_handler(args: DocSearchArgs) -> Dict[str, Any]:
         req = ToolDocSearchReq(query=args.query, top_k=args.top_k)
@@ -108,23 +111,69 @@ def register_builtin_tools(
             })
         return {"chunks": chunks}
 
+    def _is_within_roots(p: Path, roots: list[str]) -> bool:
+        try:
+            rp = p.resolve()
+        except Exception:
+            return False
+        for root in roots:
+            try:
+                rr = Path(os.path.expanduser(root)).resolve()
+            except Exception:
+                continue
+            try:
+                rp.relative_to(rr)
+                return True
+            except Exception:
+                continue
+        return False
+
+    async def local_file_read_handler(args: LocalFileReadArgs) -> Dict[str, Any]:
+        raw_path = args.path.strip()
+        if not raw_path:
+            raise ToolError("path is required", code="invalid_args")
+
+        p = Path(os.path.expanduser(raw_path))
+        roots = cfg.local_file_roots or []
+        if not roots:
+            raise ToolError("local_file_read has no configured roots", code="not_configured")
+
+        if not _is_within_roots(p, roots):
+            raise ToolError("path is outside allowed roots", code="path_out_of_scope", details={"path": raw_path})
+
+        max_bytes = int(cfg.local_file_max_bytes or 200000)
+        try:
+            b = p.read_bytes()
+        except FileNotFoundError:
+            raise ToolError("file not found", code="not_found", details={"path": str(p)})
+        except Exception as exc:
+            raise ToolError(f"failed to read file: {exc}", code="read_failed", details={"path": str(p)})
+
+        truncated = False
+        if len(b) > max_bytes:
+            b = b[:max_bytes]
+            truncated = True
+
+        try:
+            content = b.decode("utf-8")
+        except Exception:
+            content = b.decode("utf-8", errors="replace")
+
+        return {"path": str(p), "truncated": truncated, "content": content}
+
     async def shell_exec_handler(args: ShellExecArgs) -> Dict[str, Any]:
         """Execute shell command with strict safety controls."""
         try:
             # Parse command safely
             cmd_parts = shlex.split(args.command)
             if not cmd_parts:
-                return {"error": "empty command"}
+                raise ToolError("empty command", code="invalid_args")
 
-            # Basic allowlist - filesystem and safe commands only (no network)
-            allowed_commands = {
-                'ls', 'pwd', 'echo', 'cat', 'head', 'tail', 'grep', 'wc', 'sort',
-                'df', 'du', 'free', 'ps', 'uptime', 'date', 'whoami', 'id',
-                'python3', 'python', 'git'
-            }
-
-            if cmd_parts[0] not in allowed_commands:
-                return {"error": f"command '{cmd_parts[0]}' not in allowlist"}
+            allowed = set(cfg.shell_exec_allow or [])
+            if not allowed:
+                raise ToolError("shell_exec allowlist is empty", code="not_configured")
+            if cmd_parts[0] not in allowed:
+                raise ToolError("command not in allowlist", code="not_allowed", details={"cmd": cmd_parts[0]})
 
             # Execute with timeout and output capture
             result = subprocess.run(
@@ -137,116 +186,68 @@ def register_builtin_tools(
             )
 
             return {
-                "returncode": result.returncode,
-                "stdout": result.stdout[:4096] if result.stdout else "",  # Cap output
-                "stderr": result.stderr[:4096] if result.stderr else "",
+                "returncode": int(result.returncode),
+                "stdout": (result.stdout or "")[:4096],
+                "stderr": (result.stderr or "")[:4096],
             }
 
         except subprocess.TimeoutExpired:
-            return {"error": "command timed out"}
+            raise ToolError("command timed out", code="timeout")
+        except ToolError:
+            raise
         except Exception as e:
-            return {"error": f"execution failed: {str(e)}"}
+            raise ToolError(f"execution failed: {e}", code="execution_failed")
 
-    async def kiwix_list_zims_handler(args: KiwixListZimsArgs) -> Dict[str, Any]:
-        from ..services import kiwix
-        from .. import config
-
-        zim_dir = args.zim_dir or config.config.kiwix_zim_dir
-        zims = await kiwix.list_zims(zim_dir)
-        return {"zims": zims, "zim_dir": zim_dir}
-
-    async def epub_list_handler(args: EpubListArgs) -> Dict[str, Any]:
-        from .. import config
-        from ..ingest import epub as epub_ingest
-
-        library_dir = config.config.ebooks_dir
-        items = await asyncio.to_thread(
-            epub_ingest.list_epubs,
-            query=args.q,
-            limit=args.limit,
-            library_dir=library_dir,
-        )
-        return {"library_dir": library_dir, "items": items}
-
-    async def epub_ingest_handler(args: EpubIngestArgs) -> Dict[str, Any]:
-        from .. import config
-        from ..ingest import epub as epub_ingest
-
-        library_dir = config.config.ebooks_dir
-        if args.path:
-            return await epub_ingest.ingest_epub(
-                path=args.path,
-                embed_model=embed_model,
-                library_dir=library_dir,
+    if "web_search" in enabled:
+        registry.register(
+            ToolSpec(
+                name="web_search",
+                description="Search the web for relevant pages.",
+                args_model=WebSearchArgs,
+                output_model=WebSearchOut,
+                error_codes=["search_disabled", "search_failed"],
+                handler=web_search_handler,
+                side_effect="network",
             )
-        if args.q:
-            return await epub_ingest.ingest_epubs_by_query(
-                query=args.q,
-                limit=args.limit,
-                embed_model=embed_model,
-                library_dir=library_dir,
+        )
+
+    if "doc_search" in enabled:
+        registry.register(
+            ToolSpec(
+                name="doc_search",
+                description="Search locally-ingested documents (RAG) for relevant passages.",
+                args_model=DocSearchArgs,
+                output_model=DocSearchOut,
+                error_codes=["invalid_arguments"],
+                handler=doc_search_handler,
+                side_effect="read_only",
             )
-        return {"ok": False, "error": "Provide either path or q"}
-
-    registry.register(
-        ToolSpec(
-            name="web_search",
-            description="Search the web. Args: {q}. Returns: {items:[{title,url,snippet}]}",
-            args_model=WebSearchArgs,
-            handler=web_search_handler,
-            side_effect="network",
         )
-    )
 
-    registry.register(
-        ToolSpec(
-            name="kiwix_list_zims",
-            description="List local Kiwix ZIM files. Args: {zim_dir?}. Returns: {zims:[...], zim_dir}",
-            args_model=KiwixListZimsArgs,
-            handler=kiwix_list_zims_handler,
-            side_effect="read_only",
+    if "local_file_read" in enabled:
+        registry.register(
+            ToolSpec(
+                name="local_file_read",
+                description="Read a local file (requires explicit user-provided path; root-scoped; size-bounded).",
+                args_model=LocalFileReadArgs,
+                output_model=LocalFileReadOut,
+                error_codes=["not_configured", "path_out_of_scope", "not_found", "read_failed"],
+                handler=local_file_read_handler,
+                side_effect="read_only",
+            )
         )
-    )
 
-    registry.register(
-        ToolSpec(
-            name="epub_list",
-            description="List EPUBs from the Calibre library. Args: {q?, limit?}. Returns: {items:[{path}], library_dir}",
-            args_model=EpubListArgs,
-            handler=epub_list_handler,
-            side_effect="read_only",
-        )
-    )
-
-    registry.register(
-        ToolSpec(
-            name="epub_ingest",
-            description="Ingest EPUB(s) into RAG. Args: {path?} or {q?, limit?}. Returns: {ok, doc_id?} or {results:[...]}",
-            args_model=EpubIngestArgs,
-            handler=epub_ingest_handler,
-            side_effect="writes",
-        )
-    )
-
-    registry.register(
-        ToolSpec(
-            name="doc_search",
-            description="Search docs (RAG). Args: {query, top_k}. Returns: {chunks:[...]}",
-            args_model=DocSearchArgs,
-            handler=doc_search_handler,
-            side_effect="read_only",
-        )
-    )
-
-    # Shell exec - only register if explicitly enabled
-    if os.getenv("ALLOW_SHELL_EXEC", "").lower() in ("1", "true", "yes"):
+    # Shell exec - only register if explicitly enabled via tools.toml
+    if "shell_exec" in enabled and cfg.shell_exec_enabled:
         registry.register(
             ToolSpec(
                 name="shell_exec",
                 description="Execute safe shell commands (allowlisted only). Args: {command, cwd?, timeout}. Returns: {returncode, stdout, stderr}",
                 args_model=ShellExecArgs,
+                output_model=ShellExecOut,
+                error_codes=["not_configured", "not_allowed", "timeout", "execution_failed"],
                 handler=shell_exec_handler,
                 side_effect="dangerous",
-                requires_confirmation=True,
+                requires_confirmation=bool(cfg.shell_exec_requires_confirmation),
             )
         )

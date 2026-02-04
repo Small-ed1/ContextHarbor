@@ -1,51 +1,260 @@
 from __future__ import annotations
+from __future__ import annotations
+
 import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, cast
 
-from ollama_cli.config import DEFAULT_KIWIX_ZIM_DIR
 
+class ConfigError(RuntimeError):
+    pass
+
+
+def _default_config_dir() -> Path:
+    # Windows: prefer %APPDATA%\cognihub; fallback to ~/.config/cognihub
+    if os.name == "nt":
+        appdata = os.getenv("APPDATA")
+        if appdata:
+            return Path(appdata) / "cognihub"
+    return Path.home() / ".config" / "cognihub"
+
+
+def get_config_dir() -> Path:
+    raw = (os.getenv("COGNIHUB_CONFIG_DIR") or "").strip()
+    if raw:
+        return Path(os.path.expanduser(raw))
+    return _default_config_dir()
+
+
+def _read_toml(path: Path) -> dict[str, Any]:
+    try:
+        import tomllib  # py3.11+
+    except Exception as exc:  # pragma: no cover
+        raise ConfigError(f"TOML support unavailable: {exc}")
+
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ConfigError(
+            f"Missing config file: {path}. Run `cognihub run` to generate defaults."
+        )
+    except Exception as exc:
+        raise ConfigError(f"Failed to parse TOML: {path}: {exc}")
+
+    return data if isinstance(data, dict) else {}
+
+
+def ensure_default_config_files(config_dir: Path) -> list[Path]:
+    """Create default core/tools/search TOML files if missing.
+
+    Returns list of created paths.
+    """
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    created: list[Path] = []
+
+    core_path = config_dir / "core.toml"
+    tools_path = config_dir / "tools.toml"
+    search_path = config_dir / "search.toml"
+
+    if not core_path.exists():
+        core_path.write_text(
+            """# CogniHub core configuration (v1.0)\n\n[core]\nhost = \"127.0.0.1\"\nport = 8000\nreload = false\n\n[models]\nollama_url = \"http://127.0.0.1:11434\"\n# Use the exact tag name shown by `ollama list` (often ends with :latest).\nchat_model = \"llama3.1:latest\"\nembed_model = \"nomic-embed-text:latest\"\n\n[paths]\n# data_dir controls where CogniHub stores its sqlite DBs\ndata_dir = \"~/.cognihub/data\"\n\n[limits]\nmax_upload_bytes = 10485760\nmax_research_rounds = 6\nmax_pages_per_round = 12\nmax_web_queries = 6\nmax_doc_queries = 6\nmax_json_parse_size = 100000\n\n""",
+            encoding="utf-8",
+        )
+        created.append(core_path)
+
+    if not tools_path.exists():
+        tools_path.write_text(
+            """# CogniHub tool configuration (v1.0)\n\n[tools]\n# Enable/disable tools by name\nenabled = [\"web_search\", \"doc_search\", \"local_file_read\"]\n# Optional: additional python modules that register tools\nplugin_modules = []\n# Example plugin:\n# plugin_modules = [\"cognihub_example_plugin\"]\n\n[tools.local_file_read]\n# Allowed roots for local_file_read (expanduser supported)\nroots = [\"~\"]\nmax_bytes = 200000\n\n[tools.shell_exec]\n# When enabling, also add \"shell_exec\" to tools.enabled.\nenabled = false\n# When enabled, shell_exec requires an explicit confirmation token\nrequires_confirmation = true\n# Allowed commands (first argv element)\nallow = [\"git\", \"python\", \"python3\"]\n\n""",
+            encoding="utf-8",
+        )
+        created.append(tools_path)
+
+    if not search_path.exists():
+        search_path.write_text(
+            """# CogniHub web search configuration (v1.0)\n\n[search]\nenabled = true\nprovider = \"ddg\"\n# User-Agent sent for search requests\nuser_agent = \"CogniHub/1.0\"\n# Minimum seconds between provider requests\nmin_interval_seconds = 2.0\n# Optional SSRF safety controls\nallowed_hosts = []\nblocked_hosts = []\n\n""",
+            encoding="utf-8",
+        )
+        created.append(search_path)
+
+    return created
+
+
+@dataclass(frozen=True)
 class Config:
-    def __init__(self):
-        self.ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-        self.kiwix_url = os.getenv("KIWIX_URL")
-        self.kiwix_zim_dir = os.path.expanduser(os.getenv("KIWIX_ZIM_DIR", DEFAULT_KIWIX_ZIM_DIR))
-        self.ebooks_dir = os.path.expanduser(os.getenv("EBOOKS_DIR", "~/Ebooks"))
-        self.default_embed_model = os.getenv("EMBED_MODEL", "nomic-embed-text")
-        self.default_chat_model = os.getenv("DEFAULT_CHAT_MODEL", "llama3.1")
-        self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
-        self.web_user_agent = os.getenv("WEB_UA", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari")
-        self.web_allowed_hosts = os.getenv("WEB_ALLOWED_HOSTS", "")
-        self.web_blocked_hosts = os.getenv("WEB_BLOCKED_HOSTS", "")
-        
-        # Use user data directory for databases
-        data_dir = Path.home() / ".cognihub" / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
+    # core
+    host: str
+    port: int
+    reload: bool
 
-        self.rag_db = os.getenv("RAG_DB", str(data_dir / "rag.sqlite3"))
-        self.chat_db = os.getenv("CHAT_DB", str(data_dir / "chat.sqlite3"))
-        self.web_db = os.getenv("WEB_DB", str(data_dir / "web.sqlite3"))
-        self.research_db = os.getenv("RESEARCH_DB", str(data_dir / "research.sqlite3"))
-        self.tool_db = os.getenv("TOOL_DB", str(data_dir / "tool.sqlite3"))
-        
-        self.decider_model = os.getenv("DECIDER_MODEL")
-        self.rag_router_model = os.getenv("RAG_ROUTER_MODEL")
-        self.rag_rerank_model = os.getenv("RAG_RERANK_MODEL")
-        self.rag_synth_model = os.getenv("RAG_SYNTH_MODEL")
-        self.research_planner_model = os.getenv("RESEARCH_PLANNER_MODEL")
-        self.research_verifier_model = os.getenv("RESEARCH_VERIFIER_MODEL")
-        self.research_synth_model = os.getenv("RESEARCH_SYNTH_MODEL")
-        
-        self.max_summary_messages = 60
-        self.min_autosummary_messages = 4
-        self.default_autosummary_every = 12
-        self.max_research_rounds = 6
-        self.max_pages_per_round = 12
-        self.max_web_queries = 6
-        self.max_doc_queries = 6
-        self.default_web_top_k = 6
-        self.default_doc_top_k = 6
-        self.max_json_parse_size = 100000
-        self.default_chunks_per_upload = 6
+    # models
+    ollama_url: str
+    default_chat_model: str
+    default_embed_model: str
 
-config = Config()
+    # search
+    web_user_agent: str
+    web_allowed_hosts: str
+    web_blocked_hosts: str
+    search_enabled: bool
+    search_provider: str
+    search_min_interval_seconds: float
+
+    # tools
+    enabled_tools: list[str]
+    tool_plugin_modules: list[str]
+    local_file_roots: list[str]
+    local_file_max_bytes: int
+    shell_exec_enabled: bool
+    shell_exec_allow: list[str]
+    shell_exec_requires_confirmation: bool
+
+    # paths
+    data_dir: str
+    rag_db: str
+    chat_db: str
+    web_db: str
+    research_db: str
+    tool_db: str
+
+    # limits
+    max_upload_bytes: int
+    max_research_rounds: int
+    max_pages_per_round: int
+    max_web_queries: int
+    max_doc_queries: int
+    max_json_parse_size: int
+
+
+def _expand_path(p: str) -> str:
+    return str(Path(os.path.expanduser(p)).resolve())
+
+
+def _as_dict(val: Any) -> dict[str, Any]:
+    return val if isinstance(val, dict) else {}
+
+
+def load_config(*, config_dir: Path | None = None) -> Config:
+    cfg_dir = config_dir or get_config_dir()
+    core: dict[str, Any] = _read_toml(cfg_dir / "core.toml")
+    tools: dict[str, Any] = _read_toml(cfg_dir / "tools.toml")
+    search: dict[str, Any] = _read_toml(cfg_dir / "search.toml")
+
+    core_core = _as_dict(core.get("core"))
+    core_models = _as_dict(core.get("models"))
+    core_paths = _as_dict(core.get("paths"))
+    core_limits = _as_dict(core.get("limits"))
+
+    tools_sec = _as_dict(tools.get("tools"))
+    tools_local = _as_dict(tools_sec.get("local_file_read"))
+    tools_shell = _as_dict(tools_sec.get("shell_exec"))
+
+    search_sec = _as_dict(search.get("search"))
+
+    host = str(core_core.get("host") or "127.0.0.1")
+    port = int(core_core.get("port") or 8000)
+    reload = bool(core_core.get("reload") or False)
+
+    ollama_url = str(core_models.get("ollama_url") or "http://127.0.0.1:11434").rstrip("/")
+    chat_model = str(core_models.get("chat_model") or "llama3.1")
+    embed_model = str(core_models.get("embed_model") or "nomic-embed-text")
+
+    data_dir_raw = str(core_paths.get("data_dir") or "~/.cognihub/data")
+    data_dir = _expand_path(data_dir_raw)
+    Path(data_dir).mkdir(parents=True, exist_ok=True)
+
+    max_upload_bytes = int(core_limits.get("max_upload_bytes") or (10 * 1024 * 1024))
+    max_research_rounds = int(core_limits.get("max_research_rounds") or 6)
+    max_pages_per_round = int(core_limits.get("max_pages_per_round") or 12)
+    max_web_queries = int(core_limits.get("max_web_queries") or 6)
+    max_doc_queries = int(core_limits.get("max_doc_queries") or 6)
+    max_json_parse_size = int(core_limits.get("max_json_parse_size") or 100000)
+
+    search_enabled = bool(search_sec.get("enabled") if "enabled" in search_sec else True)
+    search_provider = str(search_sec.get("provider") or "ddg")
+    web_user_agent = str(search_sec.get("user_agent") or "CogniHub/1.0")
+    search_min_interval_seconds = float(search_sec.get("min_interval_seconds") or 2.0)
+
+    enabled_tools_raw = tools_sec.get("enabled")
+    enabled_tools = [str(x) for x in enabled_tools_raw] if isinstance(enabled_tools_raw, list) else []
+
+    plugin_raw = tools_sec.get("plugin_modules")
+    tool_plugin_modules = [str(x) for x in plugin_raw] if isinstance(plugin_raw, list) else []
+
+    roots_raw = tools_local.get("roots")
+    local_file_roots = [str(x) for x in roots_raw] if isinstance(roots_raw, list) else []
+    local_file_max_bytes = int(tools_local.get("max_bytes") or 200000)
+
+    shell_exec_enabled = bool(tools_shell.get("enabled") or False)
+    shell_exec_requires_confirmation = bool(tools_shell.get("requires_confirmation") if "requires_confirmation" in tools_shell else True)
+    shell_allow_raw = tools_shell.get("allow")
+    shell_exec_allow = [str(x) for x in shell_allow_raw] if isinstance(shell_allow_raw, list) else []
+
+    # SSRF safety lists are enforced in webstore/web_fetch; keep as comma-joined for legacy callers.
+    allowed_hosts = search_sec.get("allowed_hosts")
+    blocked_hosts = search_sec.get("blocked_hosts")
+    web_allowed_hosts = ",".join([str(x) for x in allowed_hosts]) if isinstance(allowed_hosts, list) else ""
+    web_blocked_hosts = ",".join([str(x) for x in blocked_hosts]) if isinstance(blocked_hosts, list) else ""
+
+    return Config(
+        host=host,
+        port=port,
+        reload=reload,
+        ollama_url=ollama_url,
+        default_chat_model=chat_model,
+        default_embed_model=embed_model,
+        web_user_agent=web_user_agent,
+        web_allowed_hosts=web_allowed_hosts,
+        web_blocked_hosts=web_blocked_hosts,
+        search_enabled=search_enabled,
+        search_provider=search_provider,
+        search_min_interval_seconds=search_min_interval_seconds,
+        enabled_tools=enabled_tools,
+        tool_plugin_modules=tool_plugin_modules,
+        local_file_roots=local_file_roots,
+        local_file_max_bytes=local_file_max_bytes,
+        shell_exec_enabled=shell_exec_enabled,
+        shell_exec_allow=shell_exec_allow,
+        shell_exec_requires_confirmation=shell_exec_requires_confirmation,
+        data_dir=data_dir,
+        rag_db=str(Path(data_dir) / "rag.sqlite3"),
+        chat_db=str(Path(data_dir) / "chat.sqlite3"),
+        web_db=str(Path(data_dir) / "web.sqlite3"),
+        research_db=str(Path(data_dir) / "research.sqlite3"),
+        tool_db=str(Path(data_dir) / "tool.sqlite3"),
+        max_upload_bytes=max_upload_bytes,
+        max_research_rounds=max_research_rounds,
+        max_pages_per_round=max_pages_per_round,
+        max_web_queries=max_web_queries,
+        max_doc_queries=max_doc_queries,
+        max_json_parse_size=max_json_parse_size,
+    )
+
+
+class _ConfigHandle:
+    """Lazy config loader.
+
+    Importing `cognihub.config` should not immediately require config files.
+    The first attribute access triggers a load.
+    """
+
+    def __init__(self) -> None:
+        self._cfg: Config | None = None
+
+    def reload(self) -> Config:
+        self._cfg = load_config()
+        return self._cfg
+
+    def _ensure(self) -> Config:
+        if self._cfg is None:
+            self._cfg = load_config()
+        return self._cfg
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._ensure(), name)
+
+
+# Backwards-compatible singleton used across the codebase: `from cognihub import config; config.config.ollama_url`
+config = _ConfigHandle()

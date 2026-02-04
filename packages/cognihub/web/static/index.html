@@ -7,7 +7,7 @@
 
   <link rel="icon" href="data:," />
 
-  <link rel="stylesheet" href="/static/styles.css?v=4" />
+  <link rel="stylesheet" href="/static/styles.css?v=6" />
 
 </head>
 
@@ -396,7 +396,7 @@
         <div class="settingsCard">
           <div class="cardHead">
             <div class="cardTitle">Model selection</div>
-            <div class="cardHint">Choose a model, or let CogniHub decide automatically.</div>
+            <div class="cardHint">Choose the default model used for chat.</div>
           </div>
 
           <div class="grid2">
@@ -412,16 +412,7 @@
             </div>
           </div>
 
-          <div class="settingRow">
-            <label class="switch">
-              <input id="autoModelToggle" type="checkbox" />
-              <span class="slider"></span>
-            </label>
-            <div class="settingText">
-              <div class="settingName">Auto model selection</div>
-              <div class="settingDesc">Let the backend pick a model per message.</div>
-            </div>
-          </div>
+          <!-- auto model selection removed (v1.0: no smart routing) -->
         </div>
 
         <div class="settingsCard">
@@ -630,7 +621,7 @@
   </div>
 
 
-  <script src="/static/app.js?v=9"></script>
+  <script src="/static/app.js?v=10"></script>
 
   <div id="toastHost" class="toastHost" aria-live="polite" aria-atomic="true"></div>
 </body>

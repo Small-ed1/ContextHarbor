@@ -206,8 +206,14 @@ button, input, textarea, select{
   transform: none;
   max-width: 980px;
   width: 100%;
+  display: block;
+  padding: 0;
 }
 #settingsMount .modalCard{ box-shadow: none; }
+#settingsMount .modalCard{ max-height: none; }
+#settingsMount .settingsBody{ overflow: visible; }
+#settingsMount .settingsPanels{ overflow: visible; padding-bottom: 14px; }
+#settingsMount .settingsFooter{ position: static; }
 
 #helpMount .modal{
   position: static;
@@ -896,30 +902,33 @@ pre{
   padding: 18px;
 }
 
-/* Settings modal uses a different DOM shape (no .modalCard wrapper).
-   Override base .modal fullscreen grid rules so Settings renders as a centered card. */
+/* Settings modal: fullscreen overlay with a centered card */
 .settingsModal.modal{
-  inset: auto;
-  padding: 0;
+  inset: 0;
+  padding: 18px;
+  display: grid;
+  place-items: center;
+  transform: none;
+}
+
+/* Dropdowns (select): force dark menu + white text */
+select.input{
+  color: var(--text);
+  background-color: color-mix(in srgb, var(--surface2) 70%, transparent);
+  color-scheme: dark;
+}
+:root[data-theme="light"] select.input{
+  color-scheme: light;
+}
+select.input option{
+  background: var(--surface);
+  color: var(--text);
+}
+.settingsModal .modalCard{
+  width: min(980px, 96vw);
+  max-height: min(92vh, 920px);
   display: flex;
   flex-direction: column;
-  place-items: unset;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(980px, 96vw);
-  max-height: min(84vh, 920px);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-}
-.settingsModal .settingsBody{
-  padding: 0;
-  font-family: var(--font-sans);
-  flex: 1 1 auto;
-  overflow: auto;
 }
 
 .modalCard{
@@ -957,11 +966,7 @@ pre{
 }
 
 /* Settings modal (your "cockpit") */
-.settingsModal .modalCard{
-  width: min(980px, 96vw);
-  max-height: min(84vh, 920px);
-  position: relative;
-}
+.settingsModal .modalCard{ position: relative; }
 .settingsHead{
   position: sticky;
   top:0;
@@ -971,7 +976,14 @@ pre{
 .settingsTitleWrap{ display:flex; flex-direction: column; }
 .settingsTitle{ font-size: 1.06rem; }
 .settingsSubtitle{ color: var(--muted); font-size: .9rem; margin-top: 2px; }
-.settingsBody{ padding: 0; font-family: var(--font-sans); }
+.settingsBody{
+  padding: 0;
+  font-family: var(--font-sans);
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
 .settingsTabs{
   display:flex;
   gap: 8px;
@@ -992,7 +1004,9 @@ pre{
   background: rgba(95,168,255,.12);
 }
 .settingsPanels{
-  padding: 14px 14px 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 14px 14px max(18px, env(safe-area-inset-bottom));
 }
 .settingsPanel{
   display:block;
@@ -1038,10 +1052,14 @@ pre{
 .settingText .settingName{ font-weight: 700; }
 .settingText .settingDesc{ color: var(--muted); font-size: .86rem; margin-top: 2px; }
 
-.settingsFoot{
-  display:flex;
-  justify-content: space-between;
-  align-items:center;
+/* Keep action buttons always visible */
+.settingsFooter{
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
   gap: 10px;
   padding: 12px 14px;
   border-top: 1px solid var(--border);
@@ -1229,16 +1247,7 @@ pre{
 
 
 
-/* === Settings modal layout fixes (v3) === */
-/* Your settings modal markup is a .modal without a dedicated card wrapper in older versions.
-   We now wrap it in .modalCard in index.html; these rules ensure the layout is sane. */
-
-.settingsModal .modalCard{
-  width: min(980px, 96vw);
-  max-height: min(84vh, 920px);
-  position: relative;
-  overflow: hidden;
-}
+/* === Settings modal layout fixes === */
 
 /* Frosted glass / gaussian-ish blur */
 .modalCard{
@@ -1254,29 +1263,10 @@ pre{
 .settingsBody{
   font-family: var(--font-sans);
   white-space: normal;
-  overflow: hidden;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
 }
 .settingsTabs{
   flex: 0 0 auto;
-}
-.settingsPanels{
-  flex: 1 1 auto;
-  overflow: auto;
-  padding: 14px 14px 0;
-}
-.settingsFooter{
-  flex: 0 0 auto;
-  position: relative;
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 14px;
-  border-top: 1px solid var(--border);
-  background: var(--surface2);
 }
 .settingsFooter .settingsGlow{
   position: absolute;
@@ -1287,9 +1277,14 @@ pre{
   opacity: .7;
 }
 
-/* Make sure header doesn't get centered separately (belt + suspenders) */
-.settingsModal{
-  place-items: center;
+/* Wrap long settings text safely */
+.settingsModal .cardHint,
+.settingsModal .help,
+.settingsModal .settingText .settingDesc,
+.settingsModal .settingsSubtitle,
+.settingsModal .field label{
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Slightly stronger overlay blur for settings */
@@ -1346,9 +1341,4 @@ pre{
 }
 
 /* ensure the settings modal never centers each child separately */
-.settingsModal{
-  position: fixed;
-  inset: 0;
-  padding: 18px;
-  display: block;
-}
+/* (intentionally no generic .settingsModal override here; the primary layout is .settingsModal.modal) */

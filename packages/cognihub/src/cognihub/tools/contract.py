@@ -28,4 +28,33 @@ class FinalAnswer(BaseModel):
     answer: str = Field(min_length=1, max_length=40_000)
 
 
+class ToolErrorInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1, max_length=64)
+    message: str = Field(min_length=1, max_length=2000)
+    detail: str | None = None
+    details: Any | None = None
+
+
+class ToolResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=64)
+    ok: bool
+    data: Dict[str, Any] | None = None
+    error: ToolErrorInfo | None = None
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolResultEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["tool_result"]
+    id: str = Field(min_length=1, max_length=64)
+    results: List[ToolResult]
+    error: ToolErrorInfo | None = None
+
+
 ToolContract = Union[ToolRequest, FinalAnswer]

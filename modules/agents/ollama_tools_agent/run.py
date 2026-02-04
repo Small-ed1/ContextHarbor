@@ -6,7 +6,7 @@ except ModuleNotFoundError:
         "Create a venv and install dependencies:\n"
         "  python -m venv .venv\n"
         "  .venv\\Scripts\\Activate.ps1\n"
-        "  pip install -e modules/cognihub-tool\n"
+        "  pip install -e modules/agents/ollama_tools_agent\n"
     )
     raise SystemExit(1)
 

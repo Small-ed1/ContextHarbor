@@ -18,8 +18,6 @@ from .stores import researchstore
 from .stores import webstore
 from .services.chat import stream_chat
 from .services.tool_chat import chat_with_tool_contract
-from .services.intelligent_chat import should_use_intelligent_tools, stream_chat_intelligent
-import asyncio
 
 from .services.kiwix import fetch_page as kiwix_fetch_page
 from .services.kiwix import list_zims as kiwix_list_zims
@@ -33,6 +31,8 @@ from .toolstore import ToolStore
 from .tools.registry import ToolRegistry
 from .tools.executor import ToolExecutor
 from .tools import builtin
+import importlib
+import inspect
 
 
 def ensure_db_dirs():
@@ -138,6 +138,27 @@ async def lifespan(app: FastAPI):
         embed_model=config.config.default_embed_model,
         kiwix_url=os.getenv("KIWIX_URL"),
     )
+
+    # Optional tool plugins (extensible without core edits)
+    for mod_path in (config.config.tool_plugin_modules or []):
+        try:
+            mod = importlib.import_module(mod_path)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to import tool plugin '{mod_path}': {exc}")
+
+        reg_fn = getattr(mod, "register_tools", None) or getattr(mod, "register", None)
+        if not callable(reg_fn):
+            raise RuntimeError(f"Tool plugin '{mod_path}' must export register_tools(registry, **deps)")
+
+        result = reg_fn(
+            app.state.tool_registry,
+            http=_http,
+            ingest_queue=_web_ingest,
+            embed_model=config.config.default_embed_model,
+            kiwix_url=os.getenv("KIWIX_URL"),
+        )
+        if inspect.isawaitable(result):
+            await result
     app.state.tool_executor = ToolExecutor(app.state.tool_registry, app.state.toolstore)
 
     try:
@@ -220,6 +241,14 @@ async def api_models():
             return {"models": [], "error": str(e)}
 
     return await _cached_get("models", 30, fetch_models)  # Cache for 30 seconds
+
+
+@app.get("/api/tools/schemas")
+async def api_tool_schemas():
+    reg = getattr(app.state, "tool_registry", None)
+    if not reg:
+        return []
+    return reg.list_schemas()
 
 # ---------------- docs ----------------
 
@@ -758,24 +787,6 @@ async def api_toggle_archive(chat_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
 
-# ---------------- model decider ----------------
-
-class DecideReq(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    query: str
-    rag_enabled: bool = False
-
-def _guess_task(query: str) -> str:
-    q = (query or "").lower()
-    if any(k in q for k in ["stack trace","traceback","error","refactor","bug","uvicorn","fastapi","docker","arch","systemd","regex"]):
-        return "coding"
-    if any(k in q for k in ["summarize","explain","write","essay","outline"]):
-        return "writing"
-    return "general"
-
-def _extract_json_obj(s: str):
-    return _json_obj_from_text(s)
-
 def _json_obj_from_text(s: str, max_size: int = config.config.max_json_parse_size) -> Any:
     s = (s or "")
     if not s or len(s) > max_size:
@@ -808,64 +819,6 @@ def _json_obj_from_text(s: str, max_size: int = config.config.max_json_parse_siz
                                 break
             break
     return None
-
-@app.post("/api/decide_model")
-async def decide_model(req: DecideReq):
-    if not _http:
-        return {"model": None, "auto": False, "error": "client not initialized"}
-    try:
-        models = await _model_registry.list_models(_http)
-    except Exception as e:
-        return {"model": None, "auto": False, "error": f"tags failed: {e}"}
-
-    installed: list[dict[str, Any]] = []
-    for m in models:
-        name = m.name
-        if not name:
-            continue
-        if "embed" in name.lower(): continue
-        installed.append({"name": name, "size": int(m.size or 0)})
-
-    if not installed:
-        return {"model": None, "auto": False, "error": "No chat models installed"}
-
-    installed.sort(key=lambda x: int(x.get("size") or 0))
-    allowed = [m["name"] for m in installed]
-
-    decider = os.getenv("DECIDER_MODEL")
-    decider_model = decider if decider in allowed else allowed[0]
-
-    task = _guess_task(req.query)
-    prompt = (
-        "Pick the best model from allowed list. Return ONLY JSON like "
-        "{\"model\":\"<one of allowed>\"}.\n\n"
-        f"Allowed: {allowed}\n"
-        f"Task: {task}\n"
-        f"RAG: {req.rag_enabled}\n"
-        f"Query: {req.query}\n"
-    )
-
-    try:
-        r = await _http.post(f"{OLLAMA_URL}/api/chat", json={
-            "model": decider_model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-        }, timeout=20.0)
-        r.raise_for_status()
-        content = (r.json().get("message") or {}).get("content", "")
-    except Exception:
-        if task == "coding" or len(req.query) > 700:
-            return {"model": allowed[-1], "auto": False, "reason": "fallback largest"}
-        return {"model": allowed[len(allowed)//2], "auto": False, "reason": "fallback mid"}
-
-    obj = _extract_json_obj(content) or {}
-    picked = obj.get("model")
-    if picked in allowed:
-        return {"model": picked, "auto": True, "decider": decider_model}
-
-    if task == "coding" or len(req.query) > 700:
-        return {"model": allowed[-1], "auto": False, "reason": "bad_json largest"}
-    return {"model": allowed[len(allowed)//2], "auto": False, "reason": "bad_json mid"}
 
 # ---------------- chat stream + rag ----------------
 
@@ -930,7 +883,7 @@ class ChatReq(BaseModel):
     rag: RagConfig | None = None
     chat_id: str | None = None
     message_id: str | None = None
-    use_intelligent_tools: bool = False
+    confirmation_token: str | None = None
 
 
 @app.post("/api/chat")
@@ -948,48 +901,26 @@ async def api_chat(req: ChatReq, request: Request):
             # Emit IDs first
             yield json.dumps({"type": "ids", "chat_id": chat_id, "message_id": message_id}) + "\n"
             
-            # Decide whether to use intelligent tool system
-            use_intelligent = should_use_intelligent_tools(req.messages, req.use_intelligent_tools)
-            
-            if use_intelligent:
-                # Use the new intelligent tool-calling system
-                logger.info(f"Using intelligent tool system for chat_id={chat_id}")
-                result = await stream_chat_intelligent(
-                    http=http,
-                    ollama_url=OLLAMA_URL,
-                    model=req.model,
-                    messages=req.messages,
-                    options=req.options,
-                    keep_alive=req.keep_alive,
-                    embed_model=DEFAULT_EMBED_MODEL,
-                    tool_registry=app.state.tool_registry,
-                    tool_executor=app.state.tool_executor,
-                    kiwix_url=os.getenv("KIWIX_URL"),
-                    chat_id=chat_id,
-                    message_id=message_id,
-                )
-                yield result
-            else:
-                # Use the existing tool system
-                logger.info(f"Using legacy tool system for chat_id={chat_id}")
-                stream_gen = stream_chat(
-                    http=http,
-                    model_registry=_model_registry,
-                    ollama_url=OLLAMA_URL,
-                    model=req.model,
-                    messages=req.messages,
-                    options=req.options,
-                    keep_alive=req.keep_alive,
-                    rag=req.rag.model_dump() if req.rag else None,
-                    embed_model=DEFAULT_EMBED_MODEL,
-                    web_ingest=_web_ingest,
-                    kiwix_url=os.getenv("KIWIX_URL"),
-                    request=request,
-                    chat_id=chat_id,
-                    message_id=message_id,
-                )
-                async for line in stream_gen:
-                    yield line
+            # v1.0: tool usage is explicit + bounded; no automatic switching.
+            stream_gen = stream_chat(
+                http=http,
+                model_registry=_model_registry,
+                ollama_url=OLLAMA_URL,
+                model=req.model,
+                messages=req.messages,
+                options=req.options,
+                keep_alive=req.keep_alive,
+                rag=req.rag.model_dump() if req.rag else None,
+                embed_model=DEFAULT_EMBED_MODEL,
+                web_ingest=_web_ingest,
+                kiwix_url=os.getenv("KIWIX_URL"),
+                request=request,
+                chat_id=chat_id,
+                message_id=message_id,
+                confirmation_token=req.confirmation_token,
+            )
+            async for line in stream_gen:
+                yield line
         except Exception as e:
             yield json.dumps({"type": "error", "error": str(e)}) + "\n"
 
@@ -1237,10 +1168,9 @@ async def api_research_source_flag(run_id: str, source_id: int, req: SourceFlagR
 def main():
     """Entry point for running the CogniHub application."""
     import uvicorn
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8000"))
-    reload = os.getenv("RELOAD", "false").lower() == "true"
-    uvicorn.run("cognihub.app:app", host=host, port=port, reload=reload)
+
+    cfg = config.config
+    uvicorn.run("cognihub.app:app", host=cfg.host, port=cfg.port, reload=cfg.reload)
 
 
 if __name__ == "__main__":

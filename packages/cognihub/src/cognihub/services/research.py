@@ -9,8 +9,7 @@ import httpx
 from .context import build_context
 from .retrieval import DocRetrievalProvider, WebRetrievalProvider, KiwixRetrievalProvider
 from .web_ingest import WebIngestQueue
-from .tooling import chat_with_tools
-from .web_search import ddg_search
+from .web_search import web_search_with_fallback, SearchError
 from ..stores import researchstore, webstore
 from .. import config
 
@@ -134,14 +133,13 @@ async def _synthesize(
         f"Verified claims JSON:\n{vc}\n\n"
         "CONTEXT:\n" + "\n".join(context_lines)
     )
-    return await chat_with_tools(
+    # Research mode synthesis is tool-free: all sources are explicit in trace.
+    return await _ollama_chat_once(
         http=http,
-        ollama_url=base_url,
+        base_url=base_url,
         model=synth_model,
         messages=[{"role": "user", "content": prompt}],
-        embed_model=embed_model,
-        ingest_queue=ingest_queue,
-        kiwix_url=kiwix_url,
+        timeout=90.0,
     )
 
 
@@ -170,9 +168,19 @@ async def run_research(
     run_id = researchstore.create_run(chat_id, query, mode, settings)
     researchstore.add_trace(run_id, "start", {"query": query, "settings": settings})
 
+    steps: list[dict[str, Any]] = []
+
     try:
         plan = await _plan_queries(http, base_url, planner_model, query)
         researchstore.add_trace(run_id, "plan", plan)
+        steps.append(
+            {
+                "type": "plan",
+                "subquestions": plan.get("subquestions") or [],
+                "web_queries": plan.get("web_queries") or [],
+                "doc_queries": plan.get("doc_queries") or [],
+            }
+        )
 
         rounds = max(1, min(int(rounds), config.config.max_research_rounds))
         pages_per_round = max(1, min(int(pages_per_round), config.config.max_pages_per_round))
@@ -190,6 +198,7 @@ async def run_research(
 
         for rno in range(1, rounds + 1):
             researchstore.add_trace(run_id, "round_begin", {"round": rno})
+            round_step: dict[str, Any] = {"type": "round", "round": rno}
 
             if use_docs:
                 doc_queries = plan.get("doc_queries") or plan.get("subquestions") or [query]
@@ -211,6 +220,7 @@ async def run_research(
                 all_doc_hits.extend(doc_round_hits[: int(doc_top_k)])
 
                 researchstore.add_trace(run_id, "docs_retrieve", {"queries": doc_queries, "hits": len(doc_round_hits)})
+                round_step["docs"] = {"queries": len(doc_queries), "hits": len(doc_round_hits)}
 
             if use_web:
                 web_queries = plan.get("web_queries") or plan.get("subquestions") or [query]
@@ -218,14 +228,21 @@ async def run_research(
 
                 urls = []
                 urls_per_query = max(1, pages_per_round // len(web_queries)) if web_queries else pages_per_round
-                search_tasks = [ddg_search(http, wq, n=urls_per_query) for wq in web_queries]
-                search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+                if not config.config.search_enabled:
+                    err = "web search disabled by config"
+                    researchstore.add_trace(run_id, "web_search_error", {"query": "*", "error": err})
+                    round_step["web"] = {"queries": len(web_queries), "urls": 0, "error": err}
+                else:
+                    search_tasks = [web_search_with_fallback(http, wq, n=urls_per_query) for wq in web_queries]
+                    search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
-                for wq, result in zip(web_queries, search_results):
-                    if isinstance(result, Exception):
-                        researchstore.add_trace(run_id, "web_search_error", {"query": wq, "error": str(result)})
-                    elif isinstance(result, list) and result:
-                        urls.extend(result)
+                    for wq, result in zip(web_queries, search_results):
+                        if isinstance(result, Exception):
+                            researchstore.add_trace(run_id, "web_search_error", {"query": wq, "error": str(result)})
+                        else:
+                            found_urls, _provider = result
+                            if isinstance(found_urls, list) and found_urls:
+                                urls.extend(found_urls)
 
                 cleaned_urls = []
                 for u in urls:
@@ -237,6 +254,8 @@ async def run_research(
                         break
 
                 researchstore.add_trace(run_id, "web_search", {"queries": web_queries, "urls": cleaned_urls})
+                if "web" not in round_step:
+                    round_step["web"] = {"queries": len(web_queries), "urls": len(cleaned_urls)}
 
                 for u in cleaned_urls:
                     await ingest_queue.enqueue(u)
@@ -265,6 +284,8 @@ async def run_research(
                 web_round_hits.sort(key=lambda x: x.score, reverse=True)
                 all_web_hits.extend(web_round_hits[: int(web_top_k)])
                 researchstore.add_trace(run_id, "web_retrieve", {"hits": len(web_round_hits)})
+                if isinstance(round_step.get("web"), dict):
+                    round_step["web"]["hits"] = len(web_round_hits)
 
             kiwix_hits = []
             if kiwix_url:
@@ -296,6 +317,9 @@ async def run_research(
             unclear = sum(1 for c in verify["claims"] if (c.get("status") != "supported"))
             researchstore.add_trace(run_id, "round_end", {"round": rno, "supported": supported, "other": unclear})
 
+            round_step["verify"] = {"claims": len(verify["claims"]), "supported": supported, "other": unclear}
+            steps.append(round_step)
+
             if supported >= 6:
                 break
 
@@ -312,7 +336,13 @@ async def run_research(
         )
         researchstore.set_run_done(run_id, final)
         researchstore.add_trace(run_id, "done", {"len": len(final)})
-        return {"ok": True, "run_id": run_id, "answer": final}
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "answer": final,
+            "sources": sources_meta,
+            "steps": steps,
+        }
     except Exception as e:
         researchstore.set_run_error(run_id, str(e))
         researchstore.add_trace(run_id, "error", {"error": str(e)})
