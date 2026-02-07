@@ -37,5 +37,5 @@ jobs:
           fi
 
           "$PY" -m pip install -U pip
-          "$PY" -m pip install -e "packages/ollama_cli[dev]" -e "packages/cognihub[dev]"
+          "$PY" -m pip install -e "packages/ollama_cli[dev]" -e "packages/contextharbor[dev]"
           "$PY" -m pytest -q
