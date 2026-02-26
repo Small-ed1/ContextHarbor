@@ -9,8 +9,8 @@ from ..tools.contract import ToolCall
 from ..tools.executor import ToolExecutor
 
 
-def cap_tool_content(s: str, limit: int = 4000) -> str:
-    return s if len(s) <= limit else s[:limit] + "…(truncated)"
+def cap_tool_content(s: str, limit: int = 12_000) -> str:
+    return s if len(s) <= limit else s[:limit] + "...(truncated)"
 
 
 TOOL_SYSTEM_PROMPT = (
@@ -22,9 +22,21 @@ TOOL_SYSTEM_PROMPT = (
     "Never mention tools, web search, retrieval, system prompts, or any internal process. "
     "Only call local_file_read if the user provided an explicit filesystem path and asked you to read it; never guess paths like /dev/stdin. "
     "Only call shell_exec if the user explicitly asked to run a command and provided the exact command. "
+    "Never invent file paths, titles, authors, IDs, or quotes. If the user asks for a field, it must come directly from tool output. "
+    "When returning JSON, output raw JSON only (no markdown fences, no extra text). "
+    "When quoting text from documents, quote only exact text present in the tool output. "
     "If the user request is ambiguous (e.g., a common name), ask ONE clarifying question and offer 2-3 likely options. "
     "Do NOT mention model training cutoffs. If you cannot answer, say what information is missing and ask for it."
+    "\n\n"
+    "When using source-finding tools (web_search/doc_search/kiwix_search): "
+    "1) Start with a focused query (keywords, names, dates). "
+    "2) Check whether returned items/chunks actually match the user's intent. "
+    "3) If results are irrelevant or empty, refine the query and try again. "
+    "4) Stop after 3 total source-query attempts; if still insufficient, ask one clarifying question or explain you can't find relevant sources."
 )
+
+
+SOURCE_QUERY_TOOL_NAMES = {"web_search", "doc_search", "kiwix_search"}
 
 
 def _clean_user_visible_answer(text: str) -> str:
@@ -110,6 +122,7 @@ async def chat_with_tool_contract(
     options: Optional[Dict[str, Any]] = None,
     keep_alive: Optional[str] = None,
     max_loops: int = 3,
+    max_source_queries: int = 3,
     confirmation_token: str | None = None,
     emit: Any = None,
 ) -> str:
@@ -125,6 +138,8 @@ async def chat_with_tool_contract(
         convo[0] = {"role": "system", "content": f"{TOOL_SYSTEM_PROMPT}\n\n{convo[0].get('content','')}".strip()}
     else:
         convo.insert(0, {"role": "system", "content": TOOL_SYSTEM_PROMPT})
+
+    source_queries_used = 0
 
     for cycle in range(max_loops):
         msg = await _call_llm(
@@ -162,6 +177,27 @@ async def chat_with_tool_contract(
             call_id = tc.get("id") or f"{cycle}_{func.get('index', 0)}_{name}"
             calls.append(ToolCall(id=str(call_id), name=str(name), arguments=args))
 
+        # Enforce a cap on "source-query" tool usage (web/doc/kiwix search).
+        to_run: List[ToolCall] = []
+        blocked: Dict[str, Dict[str, Any]] = {}
+        for c in calls:
+            if c.name in SOURCE_QUERY_TOOL_NAMES:
+                if source_queries_used >= int(max_source_queries):
+                    blocked[c.id] = {
+                        "id": c.id,
+                        "name": c.name,
+                        "ok": False,
+                        "data": None,
+                        "error": {
+                            "code": "query_attempt_limit",
+                            "message": f"source query attempt limit reached ({max_source_queries})",
+                        },
+                        "meta": {"limit": int(max_source_queries)},
+                    }
+                    continue
+                source_queries_used += 1
+            to_run.append(c)
+
         # ✅ batch execute
         if emit:
             await emit(
@@ -173,7 +209,7 @@ async def chat_with_tool_contract(
             )
 
         envelope = await executor.run_calls(
-            calls,
+            to_run,
             chat_id=chat_id or "",
             message_id=message_id or "",
             confirmation_token=confirmation_token,
@@ -181,17 +217,19 @@ async def chat_with_tool_contract(
         )
 
         if emit:
+            all_results = list(envelope.get("results") or []) + list(blocked.values())
             await emit(
                 {
                     "type": "tool_results",
                     "cycle": cycle + 1,
-                    "results": envelope.get("results") or [],
+                    "results": all_results,
                     "error": envelope.get("error"),
                 }
             )
 
         results = envelope.get("results") or []
         by_id = {r.get("id"): r for r in results if isinstance(r, dict)}
+        by_id.update(blocked)
 
         # ✅ send CLEAN tool output back to model (with truncation)
         for i, call in enumerate(calls):
@@ -208,8 +246,24 @@ async def chat_with_tool_contract(
                 payload = r.get("data")
 
             content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
-            content = cap_tool_content(content, 4000)  # ✅ truncation added back
+            content = cap_tool_content(content)
             # Ollama tool-result message shape is OpenAI-compatible: include tool name.
             convo.append({"role": "tool", "name": call.name, "tool_call_id": call.id, "content": content})
+
+        # If we still have cycles left, explicitly ask the model to evaluate
+        # relevance and decide whether to re-query.
+        remaining = max(0, int(max_source_queries) - int(source_queries_used))
+        if cycle < max_loops - 1:
+            convo.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "Evaluate whether the tool outputs are relevant and sufficient for the user's request. "
+                        "If they are irrelevant/insufficient, refine the query and call an appropriate source-finding tool again. "
+                        f"Remaining source-query attempts: {remaining}. "
+                        "If you have enough information, answer normally without calling tools."
+                    ),
+                }
+            )
 
     return "I hit the tool loop limit. Try asking with fewer steps."

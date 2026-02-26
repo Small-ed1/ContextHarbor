@@ -60,6 +60,9 @@ DEFAULT_MAX_TOOL_ROUNDS = 3
 MAX_WEB_PAGES = 12
 
 
+SOURCE_QUERY_TOOL_NAMES = {"doc_search", "web_search", "kiwix_search"}
+
+
 def _ollama_chat_timeout() -> float | None:
     """Return timeout seconds for Ollama /api/chat calls.
 
@@ -78,6 +81,10 @@ class ToolDocSearchReq(BaseModel):
     query: str
     top_k: int = 6
     doc_ids: list[int] | None = None
+    exclude_group_names: list[str] | None = None
+    exclude_sources: list[str] | None = None
+    include_tags: list[str] | None = None
+    exclude_tags: list[str] | None = None
     embed_model: str | None = None
     use_mmr: bool | None = None
     mmr_lambda: float = 0.75
@@ -160,6 +167,10 @@ async def tool_doc_search(req: ToolDocSearchReq) -> dict[str, Any]:
         query,
         top_k=req.top_k,
         doc_ids=req.doc_ids,
+        exclude_group_names=req.exclude_group_names,
+        exclude_sources=req.exclude_sources,
+        include_tags=req.include_tags,
+        exclude_tags=req.exclude_tags,
         embed_model=req.embed_model,
         use_mmr=req.use_mmr,
         mmr_lambda=req.mmr_lambda,
@@ -182,12 +193,28 @@ async def tool_web_search(
     errors: list[dict[str, Any]] = []
     kiwix_results: list[dict[str, Any]] = []
     if kiwix_url:
+        # Keep kiwix integration cheap + reliable: return search results directly.
+        # (Embedding full offline pages here can be slow and may exceed model limits.)
         try:
-            kiwix_provider = KiwixRetrievalProvider(kiwix_url)
-            kiwix_results = [
-                r.__dict__
-                for r in await kiwix_provider.retrieve(query, top_k=req.top_k, embed_model=req.embed_model)
-            ]
+            from . import kiwix as kiwix_svc
+
+            hits = await kiwix_svc.search(kiwix_url, query, top_k=req.top_k)
+            for h in hits:
+                if not isinstance(h, dict):
+                    continue
+                title = (h.get("title") or "").strip()
+                url = (h.get("url") or "").strip()
+                if not title or not url:
+                    continue
+                kiwix_results.append(
+                    {
+                        "source_type": "kiwix",
+                        "title": title,
+                        "url": url,
+                        "snippet": (h.get("snippet") or "").strip(),
+                        "path": (h.get("path") or "").strip(),
+                    }
+                )
         except Exception as exc:
             errors.append({"stage": "kiwix", "error": str(exc)})
 
@@ -335,11 +362,14 @@ async def run_tool_calling_loop(
     ingest_queue: WebIngestQueue | None,
     kiwix_url: str | None,
     max_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
+    max_source_queries: int = 3,
     emit: Any = None,
 ) -> ToolLoopResult:
     tools = tool_definitions()
     working = list(messages)
     used_tools = False
+
+    source_queries_used = 0
 
     timeout = _ollama_chat_timeout()
 
@@ -387,6 +417,28 @@ async def run_tool_calling_loop(
                 continue
             name, args, call_id = _parse_tool_call(call, idx)
             execution_meta = None  # Initialize at scope level for audit logging
+
+            # Cap how many times the model can run source-query tools across the loop.
+            # This prevents infinite "search again" behavior.
+            if name in SOURCE_QUERY_TOOL_NAMES:
+                if source_queries_used >= int(max_source_queries):
+                    payload = {
+                        "ok": False,
+                        "tool": name,
+                        "error": f"source query attempt limit reached ({max_source_queries})",
+                        "code": "query_attempt_limit",
+                    }
+                    working.append(
+                        {
+                            "role": "tool",
+                            "content": json.dumps(payload, ensure_ascii=False),
+                            "tool_call_id": call_id,
+                            "name": name,
+                        }
+                    )
+                    continue
+                source_queries_used += 1
+
             try:
                 if emit and name:
                     await emit({"type": "tool", "name": name})
@@ -540,6 +592,7 @@ async def chat_with_tools(
     embed_model: str | None = None,
     ingest_queue: WebIngestQueue | None = None,
     kiwix_url: str | None = None,
+    max_source_queries: int = 3,
     emit: Any = None,
 ) -> str:
     embed = embed_model or config.config.default_embed_model
@@ -553,6 +606,7 @@ async def chat_with_tools(
         embed_model=embed,
         ingest_queue=ingest_queue,
         kiwix_url=kiwix_url,
+        max_source_queries=max_source_queries,
         emit=emit,
     )
     return result.content

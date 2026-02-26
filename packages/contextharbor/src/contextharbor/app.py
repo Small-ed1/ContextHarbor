@@ -7,7 +7,12 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import (
+    FileResponse,
+    StreamingResponse,
+    JSONResponse,
+    PlainTextResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -25,7 +30,13 @@ from .services.kiwix import search as kiwix_search
 from .ingest import epub as epub_ingest
 from .services.models import ModelRegistry
 from .services.research import run_research
-from .services.tooling import ToolDocSearchReq, ToolWebSearchReq, chat_with_tools, tool_doc_search, tool_web_search
+from .services.tooling import (
+    ToolDocSearchReq,
+    ToolWebSearchReq,
+    chat_with_tools,
+    tool_doc_search,
+    tool_web_search,
+)
 from .services.web_ingest import WebIngestQueue
 from .toolstore import ToolStore
 from .tools.registry import ToolRegistry
@@ -46,10 +57,11 @@ def ensure_db_dirs():
     ]:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
 
@@ -74,6 +86,8 @@ EPUB_INDEX_TTL_SEC = int(os.getenv("EPUB_INDEX_TTL_SEC", "30"))
 _epub_ingest_jobs: dict[str, dict[str, Any]] = {}
 _epub_ingest_jobs_lock = asyncio.Lock()
 _epub_ingest_tasks: dict[str, asyncio.Task[None]] = {}
+
+_research_tasks: dict[str, asyncio.Task[None]] = {}
 
 _UNSET: Any = object()
 
@@ -150,7 +164,9 @@ async def _bump_epub_ingest_job(
         _epub_ingest_jobs[key] = cur
 
 
-async def _run_epub_ingest_all(*, library_dir: str, concurrency: int, query: str | None = None) -> None:
+async def _run_epub_ingest_all(
+    *, library_dir: str, concurrency: int, query: str | None = None
+) -> None:
     key = _norm_dir(library_dir)
     query_lc = (query or "").strip().lower()
     started_at = _now()
@@ -222,10 +238,16 @@ async def _run_epub_ingest_all(*, library_dir: str, concurrency: int, query: str
                         else:
                             await _bump_epub_ingest_job(key, ingested=1)
                     else:
-                        err = (res.get("error") if isinstance(res, dict) else None) or "ingest failed"
-                        await _bump_epub_ingest_job(key, failed=1, last_error=str(err)[:1000])
+                        err = (
+                            res.get("error") if isinstance(res, dict) else None
+                        ) or "ingest failed"
+                        await _bump_epub_ingest_job(
+                            key, failed=1, last_error=str(err)[:1000]
+                        )
                 except Exception as exc:
-                    await _bump_epub_ingest_job(key, failed=1, last_error=str(exc)[:1000])
+                    await _bump_epub_ingest_job(
+                        key, failed=1, last_error=str(exc)[:1000]
+                    )
                 finally:
                     await _bump_epub_ingest_job(key, processed=1)
                     queue.task_done()
@@ -244,28 +266,40 @@ async def _run_epub_ingest_all(*, library_dir: str, concurrency: int, query: str
         async with _epub_ingest_jobs_lock:
             _epub_ingest_tasks.pop(key, None)
 
+
 SLASH_COMMANDS = [
-    {"cmd": "/help",    "args": "",           "desc": "Show all commands"},
-    {"cmd": "/find",    "args": "<query>",    "desc": "Search within current chat"},
-    {"cmd": "/search",  "args": "<query>",    "desc": "Search across all chats"},
-    {"cmd": "/pin",     "args": "",           "desc": "Toggle pin for current chat"},
-    {"cmd": "/archive", "args": "",           "desc": "Toggle archive for current chat"},
-    {"cmd": "/summary", "args": "",           "desc": "Generate/update chat summary"},
-    {"cmd": "/jump",    "args": "<msg_id>",   "desc": "Jump to a message id"},
-    {"cmd": "/clear",   "args": "",           "desc": "Clear current chat"},
-    {"cmd": "/status",  "args": "",           "desc": "Show system status"},
-    {"cmd": "/research", "args": "<question>", "desc": "Start research task"},
-    {"cmd": "/set",     "args": "<key> <value>", "desc": "Change settings"},
-    {"cmd": "/tags",    "args": "",           "desc": "Show/manage chat tags"},
-    {"cmd": "/tag",     "args": "<tag>",      "desc": "Add/remove tag from chat"},
-    {"cmd": "/trace",   "args": "<run_id>",   "desc": "Show research trace"},
-    {"cmd": "/sources", "args": "<run_id>",   "desc": "Show research sources"},
-    {"cmd": "/claims",  "args": "<run_id>",   "desc": "Show research claims"},
-    {"cmd": "/autosummary", "args": "",       "desc": "Toggle auto-summary"},
+    {"cmd": "/help", "args": "", "desc": "Show all commands"},
+    {"cmd": "/find", "args": "<query>", "desc": "Search within current chat"},
+    {"cmd": "/search", "args": "<query>", "desc": "Search across all chats"},
+    {"cmd": "/pin", "args": "", "desc": "Toggle pin for current chat"},
+    {"cmd": "/archive", "args": "", "desc": "Toggle archive for current chat"},
+    {"cmd": "/summary", "args": "", "desc": "Generate/update chat summary"},
+    {"cmd": "/jump", "args": "<msg_id>", "desc": "Jump to a message id"},
+    {"cmd": "/clear", "args": "", "desc": "Clear current chat"},
+    {"cmd": "/status", "args": "", "desc": "Show system status"},
+    {
+        "cmd": "/research",
+        "args": "[--web] [--30m] <question>",
+        "desc": "Start deep research (offline-first; --30m sets minimum duration)",
+    },
+    {
+        "cmd": "/deep",
+        "args": "(alias) [--web] [--30m] <question>",
+        "desc": "Alias for /research (same flags)",
+    },
+    {"cmd": "/set", "args": "<key> <value>", "desc": "Change settings"},
+    {"cmd": "/tags", "args": "", "desc": "Show/manage chat tags"},
+    {"cmd": "/tag", "args": "<tag>", "desc": "Add/remove tag from chat"},
+    {"cmd": "/trace", "args": "<run_id>", "desc": "Show research trace"},
+    {"cmd": "/sources", "args": "<run_id>", "desc": "Show research sources"},
+    {"cmd": "/claims", "args": "<run_id>", "desc": "Show research claims"},
+    {"cmd": "/autosummary", "args": "", "desc": "Toggle auto-summary"},
 ]
+
 
 def _now():
     return int(time.time())
+
 
 async def _cached_get(key: str, ttl: int, fetcher):
     """Simple cache with TTL"""
@@ -278,6 +312,7 @@ async def _cached_get(key: str, ttl: int, fetcher):
         _cache[key] = (data, time.time())
         return data
 
+
 def _sanitize_filename(filename: str | None) -> str:
     if not filename:
         return "upload.txt"
@@ -286,9 +321,116 @@ def _sanitize_filename(filename: str | None) -> str:
     filename = re.sub(r"[^\w\-_.]", "_", filename)
     filename = filename.lstrip(".")
     filename = filename[:200] or "upload.txt"
-    if not any(filename.lower().endswith(ext) for ext in [".txt", ".md", ".py", ".js", ".html", ".csv", ".json"]):
+    if not any(
+        filename.lower().endswith(ext)
+        for ext in [".txt", ".md", ".py", ".js", ".html", ".csv", ".json"]
+    ):
         filename = filename + ".txt"
     return filename
+
+
+def _parse_bool_env(name: str) -> bool | None:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return None
+    if raw in {"1", "true", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "no", "n", "off"}:
+        return False
+    return None
+
+
+def _candidate_model_names(name: str) -> list[str]:
+    n = (name or "").strip()
+    if not n:
+        return []
+    out: list[str] = [n]
+    if ":" not in n:
+        out.append(f"{n}:latest")
+    else:
+        base, tag = n.split(":", 1)
+        if tag == "latest":
+            out.append(base)
+        else:
+            out.append(f"{base}:latest")
+
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for x in out:
+        if x in seen:
+            continue
+        seen.add(x)
+        uniq.append(x)
+    return uniq
+
+
+async def _auto_rag_enabled_for_new_chat() -> bool:
+    forced = _parse_bool_env("RAG_AUTO_ENABLE")
+    if forced is not None:
+        return forced
+
+    # No docs -> RAG adds cost without benefit.
+    try:
+        if not ragstore.has_any_documents():
+            return False
+    except Exception:
+        return False
+
+    if not _http:
+        return False
+
+    # Heuristic: only default-enable RAG on high-memory, currently-idle-ish systems.
+    try:
+        import psutil  # type: ignore
+
+        mem = psutil.virtual_memory()
+        total = int(getattr(mem, "total", 0) or 0)
+        available = int(getattr(mem, "available", 0) or 0)
+        percent = float(getattr(mem, "percent", 100.0) or 100.0)
+    except Exception:
+        return False
+
+    if total < 32 * 1024 * 1024 * 1024:
+        return False
+    if available < 8 * 1024 * 1024 * 1024:
+        return False
+    if percent > 75.0:
+        return False
+
+    # "Models are smaller": use Ollama tag sizes as a proxy.
+    try:
+        models = await _model_registry.list_models(_http)
+    except Exception:
+        # If we can't inspect models, fall back to memory-only.
+        return True
+
+    by_name = {m.name: int(m.size or 0) for m in models}
+
+    def _lookup_size(model_name: str) -> int | None:
+        for cand in _candidate_model_names(model_name):
+            if cand in by_name:
+                return by_name[cand]
+        # Try a lightweight prefix match (e.g., config has base name; tags include :latest).
+        for cand in _candidate_model_names(model_name):
+            for k, v in by_name.items():
+                if k.startswith(cand + ":"):
+                    return v
+        return None
+
+    chat_model = str(getattr(config.config, "default_chat_model", "") or "").strip()
+    embed_model = str(getattr(config.config, "default_embed_model", "") or "").strip()
+
+    chat_size = _lookup_size(chat_model)
+    embed_size = _lookup_size(embed_model)
+
+    # Conservative thresholds (bytes on disk).
+    if chat_size is not None and chat_size > (10 * 1024 * 1024 * 1024):
+        return False
+    if embed_size is not None and embed_size > (3 * 1024 * 1024 * 1024):
+        return False
+
+    return True
 
 
 @asynccontextmanager
@@ -307,7 +449,9 @@ async def lifespan(app: FastAPI):
     try:
         default_lib = _norm_dir(getattr(config.config, "ebooks_dir", ""))
         if default_lib:
-            _epub_indexes[default_lib] = await asyncio.to_thread(epub_ingest.build_epub_index, library_dir=default_lib)
+            _epub_indexes[default_lib] = await asyncio.to_thread(
+                epub_ingest.build_epub_index, library_dir=default_lib
+            )
     except Exception:
         pass
 
@@ -326,7 +470,7 @@ async def lifespan(app: FastAPI):
     )
 
     # Optional tool plugins (extensible without core edits)
-    for mod_path in (config.config.tool_plugin_modules or []):
+    for mod_path in config.config.tool_plugin_modules or []:
         try:
             mod = importlib.import_module(mod_path)
         except Exception as exc:
@@ -334,7 +478,9 @@ async def lifespan(app: FastAPI):
 
         reg_fn = getattr(mod, "register_tools", None) or getattr(mod, "register", None)
         if not callable(reg_fn):
-            raise RuntimeError(f"Tool plugin '{mod_path}' must export register_tools(registry, **deps)")
+            raise RuntimeError(
+                f"Tool plugin '{mod_path}' must export register_tools(registry, **deps)"
+            )
 
         result = reg_fn(
             app.state.tool_registry,
@@ -350,18 +496,53 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Best-effort: cancel any background research runs.
+        tasks = list(_research_tasks.values())
+        _research_tasks.clear()
+        for t in tasks:
+            try:
+                t.cancel()
+            except Exception:
+                pass
+        if tasks:
+            try:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            except Exception:
+                pass
+
         if _http:
             await _http.aclose()
             _http = None
         await _web_ingest.stop()
 
+
 app = FastAPI(lifespan=lifespan)
-static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../web/static"))
+
+
+def _choose_static_dir() -> str:
+    """Prefer repo UI assets; fallback to packaged assets.
+
+    - In this repo, UI assets live in packages/contextharbor/web/static
+    - In built wheels/sdists, only contextharbor/static is guaranteed
+    """
+
+    here = Path(__file__).resolve().parent
+    repo_static = (here / "../../web/static").resolve()
+    if (repo_static / "index.html").exists():
+        return str(repo_static)
+
+    pkg_static = here / "static"
+    return str(pkg_static)
+
+
+static_dir = _choose_static_dir()
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
 
 @app.get("/")
 async def root():
     return FileResponse(os.path.join(static_dir, "index.html"))
+
 
 @app.get("/health")
 async def health():
@@ -372,7 +553,7 @@ async def health():
         # System metrics
         cpu_percent = psutil.cpu_percent(interval=0.1)
         memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
+        disk = psutil.disk_usage("/")
 
         return {
             "ok": True,
@@ -388,14 +569,16 @@ async def health():
             },
             "services": {
                 "ollama": await api_status(),
-            }
+            },
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+
 @app.get("/api/slash_commands")
 async def api_slash_commands():
     return {"commands": SLASH_COMMANDS}
+
 
 @app.get("/api/status")
 async def api_status():
@@ -412,6 +595,7 @@ async def api_status():
             return {"ok": False, "error": str(e)}
 
     return await _cached_get("status", 60, fetch_status)  # Cache for 60 seconds
+
 
 @app.get("/api/models")
 async def api_models():
@@ -436,34 +620,49 @@ async def api_tool_schemas():
         return []
     return reg.list_schemas()
 
+
 # ---------------- docs ----------------
+
 
 @app.get("/api/docs")
 async def docs_list():
     return {"docs": ragstore.list_documents()}
+
 
 @app.delete("/api/docs/{doc_id}")
 async def docs_delete(doc_id: int):
     ragstore.delete_document(doc_id)
     return {"ok": True}
 
+
 class DocPatchReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     weight: Optional[float] = None
     group_name: Optional[str] = None
     filename: Optional[str] = None
+    tags: Optional[list[str]] = None
+    tags_op: Optional[str] = None  # set|add|remove
+
 
 @app.patch("/api/docs/{doc_id}")
 async def docs_patch(doc_id: int, req: DocPatchReq):
-    ragstore.update_document(doc_id, weight=req.weight, group_name=req.group_name, filename=req.filename)
+    ragstore.update_document(
+        doc_id,
+        weight=req.weight,
+        group_name=req.group_name,
+        filename=req.filename,
+        tags=req.tags,
+        tags_op=req.tags_op,
+    )
     return {"ok": True}
+
 
 @app.post("/api/docs/upload")
 async def docs_upload(file: UploadFile = File(...)):
     total = 0
     chunk_size = 8192
     chunks = []
-    
+
     while total < MAX_UPLOAD_BYTES:
         chunk = await file.read(chunk_size)
         if not chunk:
@@ -473,27 +672,32 @@ async def docs_upload(file: UploadFile = File(...)):
         if total > MAX_UPLOAD_BYTES:
             chunks = chunks[:-1]
             total -= len(chunk)
-            logger.warning(f"File upload too large: {total} bytes (max {MAX_UPLOAD_BYTES})")
-            raise HTTPException(status_code=413, detail=f"File too large (max {MAX_UPLOAD_BYTES} bytes)")
-    
+            logger.warning(
+                f"File upload too large: {total} bytes (max {MAX_UPLOAD_BYTES})"
+            )
+            raise HTTPException(
+                status_code=413, detail=f"File too large (max {MAX_UPLOAD_BYTES} bytes)"
+            )
+
     if total == 0:
         logger.warning("Empty file upload attempt")
         raise HTTPException(status_code=400, detail="Empty file")
-    
+
     raw = b"".join(chunks)
     try:
         text = raw.decode("utf-8")
     except Exception:
         text = raw.decode("utf-8", errors="ignore")
-    
+
     if not text.strip():
         logger.warning("File contains no readable text")
         raise HTTPException(status_code=400, detail="No readable text")
-    
+
     safe_filename = _sanitize_filename(file.filename)
     logger.info(f"Uploading document: {safe_filename} ({total} bytes)")
-    doc_id = await ragstore.add_document(safe_filename, text)
+    doc_id = await ragstore.add_document(safe_filename, text, tags=["upload"])
     return {"ok": True, "doc_id": doc_id}
+
 
 @app.post("/api/tools/doc_search")
 async def api_tool_doc_search(req: ToolDocSearchReq):
@@ -501,6 +705,7 @@ async def api_tool_doc_search(req: ToolDocSearchReq):
         return await tool_doc_search(req)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
 
 @app.post("/api/tools/web_search")
 async def api_tool_web_search(req: ToolWebSearchReq):
@@ -517,10 +722,12 @@ async def api_tool_web_search(req: ToolWebSearchReq):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+
 class KiwixSearchReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     query: str
     top_k: int = 8
+
 
 @app.post("/api/kiwix/search")
 async def api_kiwix_search(req: KiwixSearchReq):
@@ -532,6 +739,7 @@ async def api_kiwix_search(req: KiwixSearchReq):
         raise HTTPException(status_code=400, detail="query required")
     results = await kiwix_search(kiwix_url, query, top_k=req.top_k)
     return {"results": results}
+
 
 @app.get("/api/kiwix/page")
 async def api_kiwix_page(path: str = Query(..., min_length=1)):
@@ -593,7 +801,9 @@ async def api_epubs_list(
         out.append({"path": ps})
 
     # Annotate results with ingest status so the UI can show what's already ingested.
-    doc_ids = ragstore.lookup_doc_ids_by_source_paths("epub", [it["path"] for it in out if it.get("path")])
+    doc_ids = ragstore.lookup_doc_ids_by_source_paths(
+        "epub", [it["path"] for it in out if it.get("path")]
+    )
     for it in out:
         pth = str(it.get("path") or "")
         did = doc_ids.get(pth)
@@ -601,7 +811,11 @@ async def api_epubs_list(
         if did:
             it["doc_id"] = int(did)
 
-    return {"library_dir": idx.get("library_dir") or lib, "items": out, "indexed_at": idx.get("indexed_at")}
+    return {
+        "library_dir": idx.get("library_dir") or lib,
+        "items": out,
+        "indexed_at": idx.get("indexed_at"),
+    }
 
 
 @app.post("/api/epubs/ingest")
@@ -645,7 +859,9 @@ async def api_epubs_ingest_many(req: EpubIngestManyReq):
 
 
 @app.get("/api/epubs/ingest_all/status")
-async def api_epubs_ingest_all_status(library_dir: Optional[str] = Query(default=None, max_length=1024)):
+async def api_epubs_ingest_all_status(
+    library_dir: Optional[str] = Query(default=None, max_length=1024),
+):
     lib = (library_dir or "").strip() or config.config.ebooks_dir
     key = _norm_dir(lib)
     j = await _get_epub_ingest_job(key)
@@ -677,7 +893,9 @@ async def api_epubs_ingest_all(req: EpubIngestAllReq):
 
 
 @app.get("/api/library/ingested")
-async def api_library_ingested(source: str = Query(default="epub", min_length=1, max_length=32)):
+async def api_library_ingested(
+    source: str = Query(default="epub", min_length=1, max_length=32),
+):
     docs = ragstore.list_documents()
     src = (source or "").strip().lower()
     out: list[dict[str, Any]] = []
@@ -699,12 +917,14 @@ async def api_library_ingested(source: str = Query(default="epub", min_length=1,
         )
     return {"source": src, "items": out}
 
+
 @app.get("/api/chunks/{chunk_id}")
 async def get_chunk(chunk_id: int):
     try:
         return ragstore.get_chunk(chunk_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="chunk not found")
+
 
 @app.get("/api/chunks/{chunk_id}/neighbors")
 async def get_neighbors(chunk_id: int, span: int = 1):
@@ -713,11 +933,14 @@ async def get_neighbors(chunk_id: int, span: int = 1):
     except KeyError:
         raise HTTPException(status_code=404, detail="chunk not found")
 
+
 # ---------------- chats ----------------
+
 
 class ChatCreateReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     title: Optional[str] = "New Chat"
+
 
 class ChatPatchReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -725,22 +948,38 @@ class ChatPatchReq(BaseModel):
     archived: Optional[bool] = None
     pinned: Optional[bool] = None
 
+
 class ChatAppendReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     messages: list[dict]
+
 
 class EditReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     msg_id: int
     new_content: str
 
+
 @app.get("/api/chats")
-async def api_list_chats(archived: int = 0, q: str | None = None, tag: str | None = None):
-    return {"chats": chatstore.list_chats(include_archived=bool(archived), q=q, tag=tag)}
+async def api_list_chats(
+    archived: int = 0, q: str | None = None, tag: str | None = None
+):
+    return {
+        "chats": chatstore.list_chats(include_archived=bool(archived), q=q, tag=tag)
+    }
+
 
 @app.post("/api/chats")
 async def api_create_chat(req: ChatCreateReq):
-    return {"chat": chatstore.create_chat(req.title or "New Chat")}
+    rag_enabled = False
+    try:
+        rag_enabled = await _auto_rag_enabled_for_new_chat()
+    except Exception:
+        rag_enabled = False
+    return {
+        "chat": chatstore.create_chat(req.title or "New Chat", rag_enabled=rag_enabled)
+    }
+
 
 @app.get("/api/chats/{chat_id}")
 async def api_get_chat(chat_id: str, limit: int = 2000, offset: int = 0):
@@ -750,6 +989,7 @@ async def api_get_chat(chat_id: str, limit: int = 2000, offset: int = 0):
         return chatstore.get_chat(chat_id, limit=limit, offset=offset)
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
+
 
 @app.patch("/api/chats/{chat_id}")
 async def api_patch_chat(chat_id: str, req: ChatPatchReq):
@@ -761,20 +1001,24 @@ async def api_patch_chat(chat_id: str, req: ChatPatchReq):
         chatstore.set_pinned(chat_id, req.pinned)
     return {"ok": True}
 
+
 @app.post("/api/chats/{chat_id}/append")
 async def api_append(chat_id: str, req: ChatAppendReq):
     chatstore.append_messages(chat_id, req.messages)
     return {"ok": True}
+
 
 @app.post("/api/chats/{chat_id}/clear")
 async def api_clear_chat(chat_id: str):
     chatstore.clear_chat(chat_id)
     return {"ok": True}
 
+
 @app.delete("/api/chats/{chat_id}")
 async def api_delete_chat(chat_id: str):
     chatstore.delete_chat(chat_id)
     return {"ok": True}
+
 
 @app.post("/api/chats/{chat_id}/edit_last")
 async def api_edit_and_trim(chat_id: str, req: EditReq):
@@ -790,9 +1034,12 @@ async def api_edit_and_trim(chat_id: str, req: EditReq):
         raise HTTPException(status_code=400, detail="can only edit user messages")
 
     await chatstore.trim_after_async(chat_id, int(req.msg_id))
-    await chatstore.update_message_content_async(chat_id, int(req.msg_id), req.new_content)
+    await chatstore.update_message_content_async(
+        chat_id, int(req.msg_id), req.new_content
+    )
 
     return {"ok": True}
+
 
 @app.get("/api/export/chat/{chat_id}")
 async def export_chat(chat_id: str):
@@ -802,14 +1049,17 @@ async def export_chat(chat_id: str):
         raise HTTPException(status_code=404, detail="chat not found")
     return PlainTextResponse(md, media_type="text/markdown")
 
+
 class PrefsReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     rag_enabled: Optional[bool] = None
     doc_ids: Any = "__nochange__"
 
+
 class TagReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     tag: str
+
 
 class SettingsReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -822,12 +1072,14 @@ class SettingsReq(BaseModel):
     autosummary_enabled: bool | None = None
     autosummary_every: int | None = None
 
+
 @app.get("/api/chats/{chat_id}/prefs")
 async def api_get_prefs(chat_id: str):
     try:
         return {"prefs": chatstore.get_prefs(chat_id)}
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
+
 
 @app.post("/api/chats/{chat_id}/prefs")
 async def api_set_prefs(chat_id: str, req: PrefsReq):
@@ -837,6 +1089,7 @@ async def api_set_prefs(chat_id: str, req: PrefsReq):
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
 
+
 @app.post("/api/chats/{chat_id}/fork")
 async def api_fork(chat_id: str, msg_id: int = Query(..., ge=1)):
     try:
@@ -845,15 +1098,22 @@ async def api_fork(chat_id: str, msg_id: int = Query(..., ge=1)):
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
 
+
 # -------- search endpoints --------
 
+
 @app.get("/api/search")
-async def api_search(q: str = Query(..., min_length=1), limit: int = 25, offset: int = 0):
+async def api_search(
+    q: str = Query(..., min_length=1), limit: int = 25, offset: int = 0
+):
     hits = chatstore.search_messages(q, chat_id=None, limit=limit, offset=offset)
     return {"hits": hits}
 
+
 @app.get("/api/chats/{chat_id}/search")
-async def api_search_in_chat(chat_id: str, q: str = Query(..., min_length=1), limit: int = 25, offset: int = 0):
+async def api_search_in_chat(
+    chat_id: str, q: str = Query(..., min_length=1), limit: int = 25, offset: int = 0
+):
     try:
         _ = chatstore.get_chat(chat_id, limit=1, offset=0)
     except KeyError:
@@ -861,7 +1121,9 @@ async def api_search_in_chat(chat_id: str, q: str = Query(..., min_length=1), li
     hits = chatstore.search_messages(q, chat_id=chat_id, limit=limit, offset=offset)
     return {"hits": hits}
 
+
 # -------- tags endpoints --------
+
 
 @app.get("/api/chats/{chat_id}/tags")
 async def api_get_tags(chat_id: str):
@@ -870,6 +1132,7 @@ async def api_get_tags(chat_id: str):
         return {"tags": chatstore.list_tags(chat_id)}
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
+
 
 @app.post("/api/chats/{chat_id}/tags/add")
 async def api_add_tag(chat_id: str, req: TagReq):
@@ -880,6 +1143,7 @@ async def api_add_tag(chat_id: str, req: TagReq):
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
 
+
 @app.post("/api/chats/{chat_id}/tags/remove")
 async def api_remove_tag(chat_id: str, req: TagReq):
     try:
@@ -889,7 +1153,9 @@ async def api_remove_tag(chat_id: str, req: TagReq):
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
 
+
 # -------- settings endpoints --------
+
 
 @app.get("/api/chats/{chat_id}/settings")
 async def api_get_settings(chat_id: str):
@@ -898,6 +1164,7 @@ async def api_get_settings(chat_id: str):
         return {"settings": chatstore.get_settings(chat_id)}
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
+
 
 @app.post("/api/chats/{chat_id}/settings")
 async def api_set_settings(chat_id: str, req: SettingsReq):
@@ -918,7 +1185,9 @@ async def api_set_settings(chat_id: str, req: SettingsReq):
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
 
+
 # -------- jump endpoint --------
+
 
 @app.get("/api/chats/{chat_id}/jump")
 async def api_jump(chat_id: str, msg_id: int = Query(..., ge=1), span: int = 20):
@@ -927,7 +1196,9 @@ async def api_jump(chat_id: str, msg_id: int = Query(..., ge=1), span: int = 20)
     except KeyError:
         raise HTTPException(status_code=404, detail="not found")
 
+
 # -------- summary endpoint --------
+
 
 @app.post("/api/chats/{chat_id}/summary")
 async def api_summary(chat_id: str):
@@ -936,7 +1207,7 @@ async def api_summary(chat_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
 
-    msgs = data["messages"][-config.config.max_summary_messages:]
+    msgs = data["messages"][-config.config.max_summary_messages :]
     body = "\n".join([f"{m['role']}: {m['content']}" for m in msgs])
 
     settings = chatstore.get_settings(chat_id)
@@ -972,15 +1243,22 @@ async def api_summary(chat_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"summary failed: {e}")
 
-    chatstore.append_messages(chat_id, [{
-        "role": "assistant",
-        "content": out,
-        "model": model,
-        "meta_json": {"summary": True}
-    }])
+    chatstore.append_messages(
+        chat_id,
+        [
+            {
+                "role": "assistant",
+                "content": out,
+                "model": model,
+                "meta_json": {"summary": True},
+            }
+        ],
+    )
     return {"ok": True, "summary": out}
 
+
 # -------- autosummary endpoint --------
+
 
 @app.post("/api/chats/{chat_id}/autosummary")
 async def api_autosummary(chat_id: str, force: int = 0):
@@ -1015,9 +1293,13 @@ async def api_autosummary(chat_id: str, force: int = 0):
         if idx is not None:
             new_count = len(ua) - (idx + 1)
             if new_count < every:
-                return {"ok": True, "skipped": True, "reason": f"need {every-new_count} more msgs"}
+                return {
+                    "ok": True,
+                    "skipped": True,
+                    "reason": f"need {every - new_count} more msgs",
+                }
 
-    window = ua[-min(80, len(ua)):]
+    window = ua[-min(80, len(ua)) :]
     body = "\n".join([f"{m['role']}: {m['content']}" for m in window])
 
     model = settings.get("model") or os.getenv("DEFAULT_CHAT_MODEL") or "llama3.1"
@@ -1056,16 +1338,22 @@ async def api_autosummary(chat_id: str, force: int = 0):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"autosummary failed: {e}")
 
-    chatstore.append_messages(chat_id, [{
-        "role": "assistant",
-        "content": out,
-        "model": model,
-        "meta_json": {"autosummary": True}
-    }])
+    chatstore.append_messages(
+        chat_id,
+        [
+            {
+                "role": "assistant",
+                "content": out,
+                "model": model,
+                "meta_json": {"autosummary": True},
+            }
+        ],
+    )
 
     chatstore.set_settings(chat_id, autosummary_last_msg_id=latest_id)
 
     return {"ok": True, "summary": out, "latest_id": latest_id}
+
 
 @app.post("/api/chats/{chat_id}/toggle_pin")
 async def api_toggle_pin(chat_id: str):
@@ -1074,6 +1362,7 @@ async def api_toggle_pin(chat_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
 
+
 @app.post("/api/chats/{chat_id}/toggle_archive")
 async def api_toggle_archive(chat_id: str):
     try:
@@ -1081,17 +1370,20 @@ async def api_toggle_archive(chat_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="chat not found")
 
-def _json_obj_from_text(s: str, max_size: int = config.config.max_json_parse_size) -> Any:
-    s = (s or "")
+
+def _json_obj_from_text(
+    s: str, max_size: int = config.config.max_json_parse_size
+) -> Any:
+    s = s or ""
     if not s or len(s) > max_size:
         return None
-    
+
     for i, ch in enumerate(s):
         if ch == "{":
             depth = 0
             in_string = False
             escape_next = False
-            
+
             for j in range(i, min(len(s), i + max_size)):
                 c = s[j]
                 if escape_next:
@@ -1106,7 +1398,7 @@ def _json_obj_from_text(s: str, max_size: int = config.config.max_json_parse_siz
                     elif c == "}":
                         depth -= 1
                         if depth == 0:
-                            json_str = s[i:j+1]
+                            json_str = s[i : j + 1]
                             try:
                                 return json.loads(json_str)
                             except json.JSONDecodeError:
@@ -1114,7 +1406,9 @@ def _json_obj_from_text(s: str, max_size: int = config.config.max_json_parse_siz
             break
     return None
 
+
 # ---------------- chat stream + rag ----------------
+
 
 class RagConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1168,6 +1462,7 @@ class RagConfig(BaseModel):
     synth_model: str | None = None
     synth_timeout_sec: float = Field(default=60.0, ge=5.0, le=600.0)
 
+
 class ChatReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     model: str
@@ -1193,8 +1488,13 @@ async def api_chat(req: ChatReq, request: Request):
     async def stream():
         try:
             # Emit IDs first
-            yield json.dumps({"type": "ids", "chat_id": chat_id, "message_id": message_id}) + "\n"
-            
+            yield (
+                json.dumps(
+                    {"type": "ids", "chat_id": chat_id, "message_id": message_id}
+                )
+                + "\n"
+            )
+
             # v1.0: tool usage is explicit + bounded; no automatic switching.
             stream_gen = stream_chat(
                 http=http,
@@ -1220,16 +1520,20 @@ async def api_chat(req: ChatReq, request: Request):
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
+
 # -------- web pages endpoints --------
+
 
 class WebUpsertReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     url: str
     force: bool = False
 
+
 @app.get("/api/web/pages")
 async def api_web_pages(limit: int = 50, offset: int = 0, domain: str | None = None):
     return {"pages": webstore.list_pages(limit=limit, offset=offset, domain=domain)}
+
 
 @app.post("/api/web/upsert")
 async def api_web_upsert(req: WebUpsertReq):
@@ -1239,12 +1543,14 @@ async def api_web_upsert(req: WebUpsertReq):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @app.get("/api/web/chunks/{chunk_id}")
 async def api_web_chunk(chunk_id: int):
     try:
         return webstore.get_chunk(chunk_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="chunk not found")
+
 
 @app.get("/api/web/chunks/{chunk_id}/neighbors")
 async def api_web_neighbors(chunk_id: int, span: int = 1):
@@ -1253,7 +1559,9 @@ async def api_web_neighbors(chunk_id: int, span: int = 1):
     except KeyError:
         raise HTTPException(status_code=404, detail="chunk not found")
 
+
 # -------- deep research endpoints --------
+
 
 class ResearchReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1261,18 +1569,25 @@ class ResearchReq(BaseModel):
     query: str
     mode: str = "deep"
     use_docs: bool = True
-    use_web: bool = True
-    rounds: int = 3
-    pages_per_round: int = 5
-    web_top_k: int = 6
-    doc_top_k: int = 6
+    use_web: bool = False
+    rounds: int = 6
+    pages_per_round: int = 10
+    web_top_k: int = 10
+    doc_top_k: int = 10
     domain_whitelist: list[str] | None = None
     embed_model: str | None = None
     planner_model: str | None = None
     verifier_model: str | None = None
     synth_model: str | None = None
 
-async def _ollama_chat_once(model: str, messages: list[dict], timeout: float = 60.0) -> str:
+    # Optional minimum wall-clock duration for the research run.
+    # Parsed from slash commands like: /research --30m ... (research for at least 30 minutes, then wrap up)
+    time_budget_sec: float | None = Field(default=None, ge=1.0)
+
+
+async def _ollama_chat_once(
+    model: str, messages: list[dict], timeout: float = 60.0
+) -> str:
     if not _http:
         raise HTTPException(status_code=503, detail="client not initialized")
     payload = {"model": model, "messages": messages, "stream": False}
@@ -1280,56 +1595,78 @@ async def _ollama_chat_once(model: str, messages: list[dict], timeout: float = 6
     r.raise_for_status()
     return ((r.json().get("message") or {}).get("content") or "").strip()
 
-def _format_sources_for_prompt(doc_hits: list[dict], web_hits: list[dict]) -> tuple[list[dict], list[str]]:
+
+def _format_sources_for_prompt(
+    doc_hits: list[dict], web_hits: list[dict]
+) -> tuple[list[dict], list[str]]:
     sources_meta = []
     context_lines = []
 
     i = 1
     for h in doc_hits:
         tag = f"D{i}"
-        sources_meta.append({
-            "source_type": "doc",
-            "ref_id": f"doc:{h['chunk_id']}",
-            "title": h.get("filename"),
-            "url": None,
-            "domain": None,
-            "score": h.get("score", 0.0),
-            "snippet": (h.get("text") or "")[:240],
-            "meta": {"chunk_id": h.get("chunk_id"), "doc_id": h.get("doc_id"), "chunk_index": h.get("chunk_index")},
-        })
-        context_lines.append(f"[{tag}] {h.get('filename')} (chunk {h.get('chunk_index')}, score {h.get('score'):.3f}, id {h.get('chunk_id')})\n{h.get('text')}\n")
+        sources_meta.append(
+            {
+                "source_type": "doc",
+                "ref_id": f"doc:{h['chunk_id']}",
+                "title": h.get("filename"),
+                "url": None,
+                "domain": None,
+                "score": h.get("score", 0.0),
+                "snippet": (h.get("text") or "")[:240],
+                "meta": {
+                    "chunk_id": h.get("chunk_id"),
+                    "doc_id": h.get("doc_id"),
+                    "chunk_index": h.get("chunk_index"),
+                },
+            }
+        )
+        context_lines.append(
+            f"[{tag}] {h.get('filename')} (chunk {h.get('chunk_index')}, score {h.get('score'):.3f}, id {h.get('chunk_id')})\n{h.get('text')}\n"
+        )
         i += 1
 
     j = 1
     for h in web_hits:
         tag = f"W{j}"
-        sources_meta.append({
-            "source_type": "web",
-            "ref_id": f"web:{h['chunk_id']}",
-            "title": h.get("title") or h.get("domain"),
-            "url": h.get("url"),
-            "domain": h.get("domain"),
-            "score": h.get("score", 0.0),
-            "snippet": (h.get("text") or "")[:240],
-            "meta": {"chunk_id": h.get("chunk_id"), "page_id": h.get("page_id"), "chunk_index": h.get("chunk_index")},
-        })
-        context_lines.append(f"[{tag}] {h.get('title') or h.get('domain')} — {h.get('url')} (score {h.get('score'):.3f}, id {h.get('chunk_id')})\n{h.get('text')}\n")
+        sources_meta.append(
+            {
+                "source_type": "web",
+                "ref_id": f"web:{h['chunk_id']}",
+                "title": h.get("title") or h.get("domain"),
+                "url": h.get("url"),
+                "domain": h.get("domain"),
+                "score": h.get("score", 0.0),
+                "snippet": (h.get("text") or "")[:240],
+                "meta": {
+                    "chunk_id": h.get("chunk_id"),
+                    "page_id": h.get("page_id"),
+                    "chunk_index": h.get("chunk_index"),
+                },
+            }
+        )
+        context_lines.append(
+            f"[{tag}] {h.get('title') or h.get('domain')} — {h.get('url')} (score {h.get('score'):.3f}, id {h.get('chunk_id')})\n{h.get('text')}\n"
+        )
         j += 1
 
     return sources_meta, context_lines
+
 
 async def _plan_queries(planner_model: str, query: str) -> dict:
     prompt = (
         "Return ONLY JSON.\n"
         "{"
-        "\"subquestions\":[...],"
-        "\"web_queries\":[...],"
-        "\"doc_queries\":[...],"
-        "\"done_if\":[...]\n"
+        '"subquestions":[...],'
+        '"web_queries":[...],'
+        '"doc_queries":[...],'
+        '"done_if":[...]\n'
         "}\n\n"
         f"User query:\n{query}\n"
     )
-    out = await _ollama_chat_once(planner_model, [{"role":"user","content":prompt}], timeout=45.0)
+    out = await _ollama_chat_once(
+        planner_model, [{"role": "user", "content": prompt}], timeout=45.0
+    )
     obj = cast(Dict, _json_obj_from_text(out) or {})
     subquestions = obj.get("subquestions")
     web_queries = obj.get("web_queries")
@@ -1337,15 +1674,23 @@ async def _plan_queries(planner_model: str, query: str) -> dict:
     sq = subquestions if isinstance(subquestions, list) else []
     wq = web_queries if isinstance(web_queries, list) else []
     dq = doc_queries if isinstance(doc_queries, list) else []
-    return {"subquestions": sq[:10], "web_queries": wq[:12], "doc_queries": dq[:12], "raw": out}
+    return {
+        "subquestions": sq[:10],
+        "web_queries": wq[:12],
+        "doc_queries": dq[:12],
+        "raw": out,
+    }
 
-async def _verify_claims(verifier_model: str, query: str, context_lines: list[str]) -> dict:
+
+async def _verify_claims(
+    verifier_model: str, query: str, context_lines: list[str]
+) -> dict:
     prompt = (
         "You are a verification agent.\n"
         "Given CONTEXT, produce ONLY JSON:\n"
         "{"
-        "\"claims\":["
-        "{\"claim\":\"...\",\"status\":\"supported|unclear|refuted\",\"citations\":[\"D1\",\"W2\"],\"notes\":\"...\"}"
+        '"claims":['
+        '{"claim":"...","status":"supported|unclear|refuted","citations":["D1","W2"],"notes":"..."}'
         "]}\n\n"
         "Rules:\n"
         "- If not directly supported, mark unclear.\n"
@@ -1353,7 +1698,9 @@ async def _verify_claims(verifier_model: str, query: str, context_lines: list[st
         f"Question:\n{query}\n\n"
         "CONTEXT:\n" + "\n".join(context_lines)
     )
-    out = await _ollama_chat_once(verifier_model, [{"role":"user","content":prompt}], timeout=60.0)
+    out = await _ollama_chat_once(
+        verifier_model, [{"role": "user", "content": prompt}], timeout=60.0
+    )
     obj = _json_obj_from_text(out) or {}
     claims_val = obj.get("claims")
     claims = claims_val if isinstance(claims_val, list) else []
@@ -1361,15 +1708,22 @@ async def _verify_claims(verifier_model: str, query: str, context_lines: list[st
     for c in claims[:40]:
         if not isinstance(c, dict):
             continue
-        cleaned.append({
-            "claim": str(c.get("claim") or "")[:1800],
-            "status": (c.get("status") or "unclear"),
-            "citations": c.get("citations") if isinstance(c.get("citations"), list) else [],
-            "notes": str(c.get("notes") or "")[:2000],
-        })
+        cleaned.append(
+            {
+                "claim": str(c.get("claim") or "")[:1800],
+                "status": (c.get("status") or "unclear"),
+                "citations": c.get("citations")
+                if isinstance(c.get("citations"), list)
+                else [],
+                "notes": str(c.get("notes") or "")[:2000],
+            }
+        )
     return {"claims": cleaned, "raw": out}
 
-async def _synthesize(synth_model: str, query: str, context_lines: list[str], verified_claims: list[dict]) -> str:
+
+async def _synthesize(
+    synth_model: str, query: str, context_lines: list[str], verified_claims: list[dict]
+) -> str:
     vc = json.dumps(verified_claims, ensure_ascii=False)
     prompt = (
         "Write best possible answer.\n"
@@ -1381,7 +1735,10 @@ async def _synthesize(synth_model: str, query: str, context_lines: list[str], ve
         f"Verified claims JSON:\n{vc}\n\n"
         "CONTEXT:\n" + "\n".join(context_lines)
     )
-    return await _ollama_chat_once(synth_model, [{"role":"user","content":prompt}], timeout=90.0)
+    return await _ollama_chat_once(
+        synth_model, [{"role": "user", "content": prompt}], timeout=90.0
+    )
+
 
 @app.post("/api/research/run")
 async def api_research_run(req: ResearchReq):
@@ -1392,11 +1749,23 @@ async def api_research_run(req: ResearchReq):
         raise HTTPException(status_code=503, detail="client not initialized")
     http = _http
 
-    planner_model = req.planner_model or os.getenv("RESEARCH_PLANNER_MODEL") or os.getenv("DEFAULT_CHAT_MODEL") or "llama3.1"
-    verifier_model = req.verifier_model or os.getenv("RESEARCH_VERIFIER_MODEL") or planner_model
+    planner_model = (
+        req.planner_model
+        or os.getenv("RESEARCH_PLANNER_MODEL")
+        or os.getenv("DEFAULT_CHAT_MODEL")
+        or "llama3.1"
+    )
+    verifier_model = (
+        req.verifier_model or os.getenv("RESEARCH_VERIFIER_MODEL") or planner_model
+    )
     synth_model = req.synth_model or os.getenv("RESEARCH_SYNTH_MODEL") or planner_model
 
+    mode = (req.mode or "").strip().lower()
+    if not mode or mode == "research":
+        mode = "deep"
+
     settings = req.model_dump(exclude_none=True)
+    settings["mode"] = mode
     embed_model = req.embed_model or DEFAULT_EMBED_MODEL
     kiwix_url = config.config.kiwix_url
 
@@ -1408,7 +1777,7 @@ async def api_research_run(req: ResearchReq):
             kiwix_url=kiwix_url,
             chat_id=req.chat_id,
             query=query,
-            mode=req.mode,
+            mode=mode,
             use_docs=req.use_docs,
             use_web=req.use_web,
             rounds=req.rounds,
@@ -1425,9 +1794,90 @@ async def api_research_run(req: ResearchReq):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/api/research/run_async")
+async def api_research_run_async(req: ResearchReq):
+    """Start a research run and return immediately.
+
+    The client should poll GET /api/research/{run_id} and /trace for progress.
+    """
+
+    query = (req.query or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="query required")
+    if not _http:
+        raise HTTPException(status_code=503, detail="client not initialized")
+
+    http = _http
+    planner_model = (
+        req.planner_model
+        or os.getenv("RESEARCH_PLANNER_MODEL")
+        or os.getenv("DEFAULT_CHAT_MODEL")
+        or "llama3.1"
+    )
+    verifier_model = (
+        req.verifier_model or os.getenv("RESEARCH_VERIFIER_MODEL") or planner_model
+    )
+    synth_model = req.synth_model or os.getenv("RESEARCH_SYNTH_MODEL") or planner_model
+
+    mode = (req.mode or "").strip().lower()
+    if not mode or mode == "research":
+        mode = "deep"
+
+    settings = req.model_dump(exclude_none=True)
+    settings["mode"] = mode
+    embed_model = req.embed_model or DEFAULT_EMBED_MODEL
+    kiwix_url = config.config.kiwix_url
+
+    run_id = researchstore.create_run(req.chat_id, query, mode, settings)
+    researchstore.add_trace(run_id, "queued", {"query": query})
+
+    async def _task() -> None:
+        try:
+            await run_research(
+                http=http,
+                base_url=OLLAMA_URL,
+                ingest_queue=_web_ingest,
+                kiwix_url=kiwix_url,
+                chat_id=req.chat_id,
+                query=query,
+                mode=mode,
+                use_docs=req.use_docs,
+                use_web=req.use_web,
+                rounds=req.rounds,
+                pages_per_round=req.pages_per_round,
+                web_top_k=req.web_top_k,
+                doc_top_k=req.doc_top_k,
+                domain_whitelist=req.domain_whitelist,
+                embed_model=embed_model,
+                planner_model=planner_model,
+                verifier_model=verifier_model,
+                synth_model=synth_model,
+                settings=settings,
+                run_id=run_id,
+            )
+        except Exception:
+            # run_research already records error state/trace
+            return
+
+    t = asyncio.create_task(_task())
+    _research_tasks[run_id] = t
+
+    def _cleanup(_t: asyncio.Task[None]) -> None:
+        _research_tasks.pop(run_id, None)
+
+    t.add_done_callback(_cleanup)
+    return {"ok": True, "run_id": run_id}
+
+
 @app.get("/api/research/runs")
-async def api_research_runs(chat_id: str | None = None, limit: int = 50, offset: int = 0):
-    return {"runs": researchstore.list_runs(chat_id=chat_id, limit=limit, offset=offset)}
+async def api_research_runs(
+    chat_id: str | None = None, limit: int = 50, offset: int = 0
+):
+    return {
+        "runs": researchstore.list_runs(chat_id=chat_id, limit=limit, offset=offset)
+    }
+
 
 @app.get("/api/research/{run_id}")
 async def api_research_get(run_id: str):
@@ -1436,26 +1886,33 @@ async def api_research_get(run_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="run not found")
 
+
 @app.get("/api/research/{run_id}/trace")
 async def api_research_trace(run_id: str, limit: int = 200, offset: int = 0):
     return {"trace": researchstore.get_trace(run_id, limit=limit, offset=offset)}
+
 
 @app.get("/api/research/{run_id}/sources")
 async def api_research_sources(run_id: str):
     return {"sources": researchstore.get_sources(run_id)}
 
+
 @app.get("/api/research/{run_id}/claims")
 async def api_research_claims(run_id: str):
     return {"claims": researchstore.get_claims(run_id)}
+
 
 class SourceFlagReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     pinned: bool | None = None
     excluded: bool | None = None
 
+
 @app.post("/api/research/{run_id}/sources/{source_id}/flag")
 async def api_research_source_flag(run_id: str, source_id: int, req: SourceFlagReq):
-    researchstore.set_source_flag(run_id, source_id, pinned=req.pinned, excluded=req.excluded)
+    researchstore.set_source_flag(
+        run_id, source_id, pinned=req.pinned, excluded=req.excluded
+    )
     return {"ok": True}
 
 
@@ -1464,7 +1921,9 @@ def main():
     import uvicorn
 
     cfg = config.config
-    uvicorn.run("contextharbor.app:app", host=cfg.host, port=cfg.port, reload=cfg.reload)
+    uvicorn.run(
+        "contextharbor.app:app", host=cfg.host, port=cfg.port, reload=cfg.reload
+    )
 
 
 if __name__ == "__main__":

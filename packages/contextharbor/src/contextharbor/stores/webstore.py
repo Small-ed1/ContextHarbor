@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os, re, time, json, sqlite3, hashlib
+from contextlib import contextmanager
 from typing import Any, Optional
 from urllib.parse import urlparse
 import ipaddress
@@ -18,7 +19,10 @@ from .. import config
 
 WEB_DB = os.path.abspath(os.getenv("WEB_DB", config.config.web_db))
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-DEFAULT_EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+DEFAULT_EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-latest")
+
+WEB_USE_PREFILTER = os.getenv("WEB_USE_PREFILTER", "1") == "1"
+WEB_PREFILTER_LIMIT = int(os.getenv("WEB_PREFILTER_LIMIT", "1500"))
 
 USER_AGENT = os.getenv(
     "WEB_UA",
@@ -74,6 +78,7 @@ def _is_blocked_url(url: str) -> bool:
 def _now() -> int:
     return int(time.time())
 
+@contextmanager
 def _conn():
     con = sqlite3.connect(WEB_DB, timeout=15, check_same_thread=False)
     con.row_factory = sqlite3.Row
@@ -83,7 +88,11 @@ def _conn():
     con.execute("PRAGMA busy_timeout=8000;")
     con.execute("PRAGMA temp_store=MEMORY;")
     con.execute("PRAGMA cache_size=-20000;")
-    return con
+    try:
+        yield con
+        con.commit()
+    finally:
+        con.close()
 
 def init_db():
     with _conn() as con:
@@ -115,6 +124,64 @@ def init_db():
         );
         """)
         con.execute("CREATE INDEX IF NOT EXISTS idx_web_chunks_page ON web_chunks(page_id, chunk_index);")
+
+        # FTS prefilter to avoid full-scans during retrieval.
+        con.execute(
+            """
+        CREATE VIRTUAL TABLE IF NOT EXISTS web_chunks_fts
+        USING fts5(
+          chunk_id UNINDEXED,
+          page_id UNINDEXED,
+          text,
+          tokenize='unicode61'
+        );
+        """
+        )
+        con.execute("DROP TRIGGER IF EXISTS web_chunks_ai;")
+        con.execute("DROP TRIGGER IF EXISTS web_chunks_ad;")
+        con.execute("DROP TRIGGER IF EXISTS web_chunks_au;")
+
+        con.execute(
+            """
+        CREATE TRIGGER IF NOT EXISTS web_chunks_ai
+        AFTER INSERT ON web_chunks
+        BEGIN
+          INSERT INTO web_chunks_fts(rowid, chunk_id, page_id, text)
+          VALUES (new.id, new.id, new.page_id, new.text);
+        END;
+        """
+        )
+        con.execute(
+            """
+        CREATE TRIGGER IF NOT EXISTS web_chunks_ad
+        AFTER DELETE ON web_chunks
+        BEGIN
+          DELETE FROM web_chunks_fts WHERE rowid = old.id;
+        END;
+        """
+        )
+        con.execute(
+            """
+        CREATE TRIGGER IF NOT EXISTS web_chunks_au
+        AFTER UPDATE OF text, page_id ON web_chunks
+        BEGIN
+          UPDATE web_chunks_fts
+             SET chunk_id=new.id,
+                 page_id=new.page_id,
+                 text=new.text
+           WHERE rowid=new.id;
+        END;
+        """
+        )
+
+        con.execute(
+            """
+        INSERT INTO web_chunks_fts(rowid, chunk_id, page_id, text)
+        SELECT wc.id, wc.id, wc.page_id, wc.text
+          FROM web_chunks wc
+         WHERE wc.id NOT IN (SELECT rowid FROM web_chunks_fts);
+        """
+        )
 
         cols = {r["name"] for r in con.execute("PRAGMA table_info(web_pages);").fetchall()}
         if "embed_model" not in cols:
@@ -191,6 +258,62 @@ def _chunk_text(text: str, target_chars: int = 900, overlap: int = 120) -> list[
         return out
     return chunks
 
+
+_word = re.compile(r"[A-Za-z0-9_]{2,}")
+
+
+def _fts_safe_query(q: str) -> str:
+    toks = _word.findall((q or "").lower())
+    return " OR ".join(toks[:24])
+
+
+def _prefilter_chunk_ids(
+    con: sqlite3.Connection,
+    query: str,
+    domain_whitelist: list[str],
+    limit: int,
+) -> list[int]:
+    q = (query or "").strip()
+    if not q:
+        return []
+    limit = max(1, min(int(limit), 5000))
+
+    wl = [d.lower().strip() for d in (domain_whitelist or []) if d and d.strip()]
+    params: list[Any] = []
+    where: list[str] = []
+
+    # MATCH must be in the WHERE clause.
+    where.append("web_chunks_fts MATCH ?")
+    params.append(q)
+
+    if wl:
+        qmarks = ",".join(["?"] * len(wl))
+        where.append(f"wp.domain IN ({qmarks})")
+        params.extend(wl)
+
+    where_sql = "WHERE " + " AND ".join(where)
+
+    sql = f"""
+      SELECT wc.id AS chunk_id
+        FROM web_chunks_fts
+        JOIN web_chunks wc ON wc.id = web_chunks_fts.rowid
+        JOIN web_pages wp ON wp.id = wc.page_id
+       {where_sql}
+       LIMIT ?;
+    """
+
+    try:
+        rows = con.execute(sql, [*params, int(limit)]).fetchall()
+        return [int(r[0]) for r in rows]
+    except sqlite3.OperationalError:
+        safe = _fts_safe_query(q)
+        if not safe:
+            return []
+        params2 = list(params)
+        params2[0] = safe
+        rows = con.execute(sql, [*params2, int(limit)]).fetchall()
+        return [int(r[0]) for r in rows]
+
 async def _fetch_url(url: str, timeout: float = 12.0) -> tuple[int, str]:
     headers = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"}
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
@@ -239,8 +362,13 @@ async def upsert_page_from_url(url: str, force: bool = False, max_chars: int = 6
     if not chunks:
         raise ValueError("chunking produced no chunks")
 
-    embs = await ragstore.embed_texts(chunks, model=embed_model)
-    embed_dim = len(embs[0]) if embs else 0
+    try:
+        embs = await ragstore.embed_texts(chunks, model=embed_model)
+        embed_dim = len(embs[0]) if embs else 0
+    except Exception:
+        # Degraded mode: keep page text + FTS available even if embeddings are down.
+        embs = [[] for _ in chunks]
+        embed_dim = 0
 
     with _conn() as con:
         row = con.execute("SELECT id, content_hash FROM web_pages WHERE url=?", (url,)).fetchone()
@@ -350,27 +478,104 @@ async def retrieve(query: str, top_k: int = 6, domain_whitelist: Optional[list[s
     wl = [d.lower().strip() for d in (domain_whitelist or []) if d and d.strip()]
 
     embed_model = embed_model or DEFAULT_EMBED_MODEL
-    qemb = (await ragstore.embed_texts([q], model=embed_model))[0]
-    qvec = ragstore.embedding_to_array(qemb)
+    try:
+        qemb = (await ragstore.embed_texts([q], model=embed_model))[0]
+        qvec = ragstore.embedding_to_array(qemb)
+    except Exception:
+        # Embeddings unavailable: fall back to FTS ranking.
+        with _conn() as con:
+            wl2 = list(wl)
+            params: list[Any] = [q]
+            where: list[str] = ["web_chunks_fts MATCH ?"]
+            if wl2:
+                qmarks = ",".join(["?"] * len(wl2))
+                where.append(f"wp.domain IN ({qmarks})")
+                params.extend(wl2)
+            where_sql = "WHERE " + " AND ".join(where)
+            sql = f"""
+              SELECT wc.id AS chunk_id, wc.page_id, wc.chunk_index, wc.text,
+                     wp.url, wp.domain, wp.title,
+                     bm25(web_chunks_fts) AS rank
+                FROM web_chunks_fts
+                JOIN web_chunks wc ON wc.id = web_chunks_fts.rowid
+                JOIN web_pages wp ON wp.id = wc.page_id
+               {where_sql}
+               ORDER BY rank ASC
+               LIMIT ?;
+            """
+            try:
+                rows = con.execute(sql, [*params, int(top_k)]).fetchall()
+            except sqlite3.OperationalError:
+                safe = _fts_safe_query(q)
+                if not safe:
+                    return []
+                params[0] = safe
+                rows = con.execute(sql, [*params, int(top_k)]).fetchall()
+
+        hits2: list[dict[str, Any]] = []
+        for r in rows:
+            rank = float(r[7] if "rank" in r.keys() else 0.0)
+            # Smaller bm25 is better; convert to descending score.
+            rr = max(0.0, rank)
+            score = 1.0 / (1.0 + rr)
+            hits2.append({
+                "source_type": "web",
+                "chunk_id": int(r[0]),
+                "page_id": int(r[1]),
+                "chunk_index": int(r[2]),
+                "text": r[3],
+                "url": r[4],
+                "domain": r[5],
+                "title": r[6],
+                "score": float(score),
+            })
+        return hits2
 
     hits: list[dict[str, Any]] = []
     with _conn() as con:
-        if wl:
-            placeholders = ",".join("?" for _ in wl)
-            rows = con.execute(f"""
+        chunk_ids: list[int] | None = None
+        if WEB_USE_PREFILTER:
+            try:
+                chunk_ids = _prefilter_chunk_ids(con, q, wl, WEB_PREFILTER_LIMIT)
+            except Exception:
+                chunk_ids = None
+
+        if chunk_ids is not None:
+            if not chunk_ids:
+                return []
+            qs = ",".join(["?"] * len(chunk_ids))
+            rows = con.execute(
+                f"""
               SELECT wc.id AS chunk_id, wc.page_id, wc.chunk_index, wc.text, wc.embedding,
                      wp.url, wp.domain, wp.title
                 FROM web_chunks wc
                 JOIN web_pages wp ON wp.id = wc.page_id
-               WHERE wp.domain IN ({placeholders})
-            """, tuple(wl)).fetchall()
+               WHERE wc.id IN ({qs})
+                """,
+                tuple(chunk_ids),
+            ).fetchall()
         else:
-            rows = con.execute("""
-              SELECT wc.id AS chunk_id, wc.page_id, wc.chunk_index, wc.text, wc.embedding,
-                     wp.url, wp.domain, wp.title
-                FROM web_chunks wc
-                JOIN web_pages wp ON wp.id = wc.page_id
-            """).fetchall()
+            if wl:
+                placeholders = ",".join("?" for _ in wl)
+                rows = con.execute(
+                    f"""
+                  SELECT wc.id AS chunk_id, wc.page_id, wc.chunk_index, wc.text, wc.embedding,
+                         wp.url, wp.domain, wp.title
+                    FROM web_chunks wc
+                    JOIN web_pages wp ON wp.id = wc.page_id
+                   WHERE wp.domain IN ({placeholders})
+                    """,
+                    tuple(wl),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    """
+                  SELECT wc.id AS chunk_id, wc.page_id, wc.chunk_index, wc.text, wc.embedding,
+                         wp.url, wp.domain, wp.title
+                    FROM web_chunks wc
+                    JOIN web_pages wp ON wp.id = wc.page_id
+                    """
+                ).fetchall()
 
     for r in rows:
         emb = ragstore.embedding_blob_to_array(r["embedding"])

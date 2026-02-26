@@ -12,14 +12,14 @@ class SearchCache:
         self.ttl = ttl_minutes * 60  # Convert to seconds
         self.cache: Dict[str, Tuple[float, list[str]]] = {}
     
-    def _make_key(self, query: str, n: int) -> str:
+    def _make_key(self, query: str, n: int, provider: str) -> str:
         """Create cache key from query and limit."""
-        content = f"{query}:{n}"
+        content = f"{provider}:{query}:{n}"
         return hashlib.sha256(content.encode()).hexdigest()[:16]
     
-    def get(self, query: str, n: int) -> list[str] | None:
+    def get(self, query: str, n: int, provider: str = "") -> list[str] | None:
         """Get cached results if not expired."""
-        key = self._make_key(query, n)
+        key = self._make_key(query, n, provider)
         if key not in self.cache:
             return None
         
@@ -30,9 +30,9 @@ class SearchCache:
         
         return results
     
-    def set(self, query: str, n: int, results: list[str]) -> None:
+    def set(self, query: str, n: int, results: list[str], provider: str = "") -> None:
         """Cache search results."""
-        key = self._make_key(query, n)
+        key = self._make_key(query, n, provider)
         self.cache[key] = (time.time(), results)
     
     def cleanup(self) -> None:
@@ -49,7 +49,7 @@ class SearchCache:
 class RateLimiter:
     """Simple rate limiter per provider with async locking."""
     
-    def __init__(self, min_interval_seconds: int = 2):
+    def __init__(self, min_interval_seconds: float = 2.0):
         self.min_interval = min_interval_seconds
         self.last_request: Dict[str, float] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
@@ -74,7 +74,7 @@ class RateLimiter:
 
 # Global instances
 _search_cache = SearchCache(ttl_minutes=30)
-_rate_limiter = RateLimiter(min_interval_seconds=2)
+_rate_limiter = RateLimiter(min_interval_seconds=2.0)
 
 def get_search_cache() -> SearchCache:
     """Get the global search cache instance."""
