@@ -1,0 +1,19 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: contextharbor-searxng
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./settings.yml:/etc/searxng/settings.yml:ro
+      - ./limiter.toml:/etc/searxng/limiter.toml:ro
+    depends_on:
+      - redis
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    container_name: contextharbor-searxng-redis
+    restart: unless-stopped

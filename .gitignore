@@ -30,3 +30,9 @@ src/*.egg-info/
 
 # Legacy staging dir (safe to delete locally)
 monorepo/
+
+# Local manual configs (never commit)
+.manual_cli/
+
+# Local docker configs (never commit)
+config/searxng/
