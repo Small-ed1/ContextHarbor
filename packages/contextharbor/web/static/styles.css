@@ -114,21 +114,38 @@
 
 /* Base reset */
 *{ box-sizing: border-box; }
-html,body{ height:100%; }
+html{ height:100%; background: var(--bg); }
 body{
+  min-height: 100vh;
   margin:0;
   font-family: var(--font-sans);
   color: var(--text);
+  background: transparent;
+  background-color: var(--bg);
+  position: relative;
+  isolation: isolate;
+}
+:root body::before{
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background:
     radial-gradient(1200px 800px at 15% 10%, rgba(95,168,255,.13), transparent 60%),
     radial-gradient(1000px 700px at 85% 0%, rgba(56,210,125,.10), transparent 55%),
     linear-gradient(180deg, var(--bg), var(--bg2));
+  background-repeat: no-repeat;
 }
 :root[data-theme="light"] body{
+  background-color: var(--bg);
+}
+:root[data-theme="light"] body::before{
   background:
-    radial-gradient(1200px 800px at 20% 10%, rgba(47,125,255,.10), transparent 60%),
-    radial-gradient(1000px 700px at 80% 0%, rgba(34,197,94,.08), transparent 55%),
+    radial-gradient(1200px 800px at 20% 10%, rgba(47,125,255,.12), transparent 60%),
+    radial-gradient(1000px 700px at 80% 0%, rgba(34,197,94,.10), transparent 55%),
     linear-gradient(180deg, var(--bg), var(--bg2));
+  background-repeat: no-repeat;
 }
 
 a{ color: inherit; }

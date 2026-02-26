@@ -868,7 +868,7 @@ const state = {
   },
   messages: [],
   docs: [],
-  prefs: { rag_enabled: 0, doc_ids: null },
+  prefs: { rag_enabled: 1, doc_ids: null },
   lastResearchRunId: null,
 };
 
@@ -1224,14 +1224,30 @@ slashPalette.addEventListener("mousedown", (e) => {
 promptEl.addEventListener("keydown", (e) => {
   const mode = (document.getElementById("sendKey")?.value || "ctrlenter");
 
+  const cur = promptEl.value || "";
+  const isSlash = cur.startsWith("/");
+  const isSlashCommandOnly = isSlash && !/\s/.test(cur);
+
   if (mode === "enter") {
     if (e.key === "Enter" && !e.shiftKey) {
-      if (promptEl.value.startsWith("/")) return;
-      e.preventDefault();
-      send();
-      return;
+      // If we're still typing the slash command token (no args yet), do not send.
+      // Let the slash palette handle completion, or fall back to a newline.
+      if (!isSlashCommandOnly) {
+        e.preventDefault();
+        send();
+        return;
+      }
     }
   } else {
+    // Slash commands should be quick to run; allow plain Enter to send them.
+    if (isSlash && e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      // If we're still typing the command token, keep Enter for completion.
+      if (!isSlashCommandOnly) {
+        e.preventDefault();
+        send();
+        return;
+      }
+    }
     // Ctrl/Cmd+Enter sends (matches placeholder)
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
       e.preventDefault();
@@ -1261,8 +1277,10 @@ promptEl.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Tab" || e.key === "Enter") {
-    // Only hijack Enter if input begins with "/" (so it doesn't break normal send)
-    if (e.key === "Enter" && !promptEl.value.startsWith("/")) return;
+    // Only hijack Enter for completion (Shift+Enter keeps newline).
+    if (e.key === "Enter" && e.shiftKey) return;
+    // If we already have args (whitespace), we're no longer completing a command.
+    if (e.key === "Enter" && !isSlashCommandOnly) return;
     e.preventDefault();
     const picked = list[slashActive];
     if (picked) insertSlash(picked.cmd);
@@ -1274,13 +1292,16 @@ promptEl.addEventListener("keydown", (e) => {
 promptEl.addEventListener("input", () => {
   autoGrow();
   const v = promptEl.value || "";
-  if (v.startsWith("/")) {
+  // Only show the slash palette while typing the command token (no whitespace yet).
+  // Once arguments start, stop interpreting input as a new slash command.
+  const cmdOnly = v.startsWith("/") && !/\s/.test(v);
+  if (cmdOnly) {
     if (!slashOpen) openSlash();
     slashActive = 0;
     buildSlashList(v.slice(1));
-  } else if (slashOpen) {
-    closeSlash();
+    return;
   }
+  if (slashOpen) closeSlash();
 });
 
 document.addEventListener("keydown", (e) => {
@@ -1381,7 +1402,7 @@ async function apiGet(path) {
 async function loadPrefs(){
   if (!currentChatId) return;
   const j = await api(`/api/chats/${currentChatId}/prefs`);
-  state.prefs = j.prefs || { rag_enabled:0, doc_ids:null };
+  state.prefs = j.prefs || { rag_enabled:1, doc_ids:null };
   ragToggle.checked = !!state.prefs.rag_enabled;
   updateRagSummary();
 }
@@ -2149,23 +2170,73 @@ async function runSlashCommand(text) {
     return { kind: "local", text: "Usage: /autosummary on | off | every <N> | now" };
   }
 
-  if (cmd === "/research") {
-    if (!rest) return { kind: "local", text: "Usage: /research <question>" };
+  if (cmd === "/research" || cmd === "/deep") {
+    if (!rest) return { kind: "local", text: "Usage: /research [--web|--offline] [--30m(min)] <question>" };
+
+    function parseBudgetTok(tok) {
+      const m = String(tok || "").trim().match(/^--(\d+(?:\.\d+)?)(s|m|h|d|mo)$/i);
+      if (!m) return null;
+      const n = parseFloat(m[1]);
+      if (!isFinite(n) || n <= 0) return null;
+      const u = String(m[2] || "").toLowerCase();
+      if (u === "s") return n;
+      if (u === "m") return n * 60;
+      if (u === "h") return n * 3600;
+      if (u === "d") return n * 86400;
+      if (u === "mo") return n * 30 * 86400;
+      return null;
+    }
+
+    // Offline-first by default. Add `--web` to explicitly enable web search.
+    let useWeb = false;
+    let timeBudgetSec = null;
+
+    const toks = String(rest || "").trim().split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (i < toks.length) {
+      const raw = toks[i];
+      const head = String(raw || "").toLowerCase();
+      if (head === "--web" || head === "web" || head === "online") {
+        useWeb = true;
+        i += 1;
+        continue;
+      }
+      if (head === "--offline" || head === "offline" || head === "--local") {
+        useWeb = false;
+        i += 1;
+        continue;
+      }
+      const budget = parseBudgetTok(raw);
+      if (budget != null) {
+        timeBudgetSec = budget;
+        i += 1;
+        continue;
+      }
+      break;
+    }
+
+    const q = toks.slice(i).join(" ").trim();
+    if (!q) return { kind: "local", text: "Usage: /research [--web|--offline] [--30m(min)] <question>" };
+
     const payload = {
       chat_id: currentChatId || null,
-      query: rest,
+      query: q,
       mode: "deep",
       use_docs: true,
-      use_web: true,
-      rounds: 3,
-      pages_per_round: 5,
-      doc_top_k: 6,
-      web_top_k: 6
+      use_web: useWeb,
+      rounds: 6,
+      pages_per_round: 10,
+      doc_top_k: 10,
+      web_top_k: 10,
     };
-    const j = await post("/api/research/run", payload);
+    if (timeBudgetSec != null) payload.time_budget_sec = timeBudgetSec;
+
+    // Start async so UI stays responsive.
+    const j = await post("/api/research/run_async", payload);
     state.lastResearchRunId = j.run_id;
     saveState();
-    return { kind: "local", text: `Run: ${j.run_id}\n\n${j.answer}` };
+    const modeHint = useWeb ? "web" : "offline";
+    return { kind: "research", run_id: j.run_id, mode: modeHint, time_budget_sec: timeBudgetSec };
   }
 
   if (cmd === "/trace") {
@@ -2210,10 +2281,91 @@ async function send() {
     try {
       const result = await runSlashCommand(text);
       if (result) {
+        // Persist the user command.
         const userMsg = { id: null, role: "user", content: text, ts: nowTs() };
         state.messages.push(userMsg);
         await appendToChat("user", text);
 
+        // Special-case research: show progress immediately + poll in background.
+        if (result.kind === "research" && result.run_id) {
+          const runId = result.run_id;
+          const modeHint = result.mode || "offline";
+
+          const assistant = {
+            id: null,
+            role: "assistant",
+            content: `Run (${modeHint}): ${runId}\n\n(working... use /trace ${runId} to inspect)` ,
+            ts: nowTs(),
+            model: "system",
+            meta: { slash: true, research: true, run_id: runId, transient: true },
+          };
+          state.messages.push(assistant);
+
+          renderChat();
+          promptEl.value = "";
+          autoGrow();
+          await loadChats();
+
+          // Do not block the chat UI while research runs.
+           (async () => {
+             let traceOffset = 0;
+             let lastProgress = "";
+
+             const budgetSec = Number(result.time_budget_sec || 0);
+              // Default: ~15 minutes. If the user set a minimum research duration, poll long enough
+              // to cover it plus a wrap-up window, with a safety cap so we don't keep a tab busy forever.
+              const maxPollSec = budgetSec > 0 ? Math.min(Math.max(900, Math.ceil(budgetSec + 600)), 7200) : 900;
+
+             for (let i = 0; i < maxPollSec; i++) {
+               await new Promise(r => setTimeout(r, 1000));
+               try {
+                 const run = await api(`/api/research/${runId}`);
+                 const status = run?.run?.status || "running";
+                 const err = run?.run?.error || "";
+                 const finalAnswer = run?.run?.final_answer || "";
+
+                const tr = await api(`/api/research/${runId}/trace?limit=200&offset=${traceOffset}`);
+                const trace = tr.trace || [];
+                if (trace.length) traceOffset += trace.length;
+
+                const steps = trace.map(t => t.step).filter(Boolean);
+                const progress = steps.length ? steps[steps.length - 1] : "running";
+                if (progress && progress !== lastProgress) {
+                  lastProgress = progress;
+                  assistant.content = `Run (${modeHint}): ${runId}\n\nStatus: ${status}\nLast step: ${progress}`;
+                  renderChat();
+                }
+
+                if (status === "done") {
+                  const answerText = String(finalAnswer || "").trim() || "(no answer)";
+                  // Replace transient bubble content in UI.
+                  assistant.content = `Run (${modeHint}): ${runId}\n\n${answerText}`;
+                  assistant.meta = { ...(assistant.meta || {}), transient: false };
+                  renderChat();
+
+                  // Persist final answer as a normal assistant message.
+                  await appendToChat("assistant", assistant.content, { slash: true, research: true, run_id: runId });
+                  await loadChats();
+                  return;
+                }
+                if (status === "error") {
+                  assistant.content = `Run (${modeHint}): ${runId}\n\nError: ${err || "(unknown error)"}`;
+                  assistant.meta = { ...(assistant.meta || {}), transient: false, error: true };
+                  renderChat();
+                  await appendToChat("assistant", assistant.content, { slash: true, research: true, run_id: runId, error: true });
+                  await loadChats();
+                  return;
+                }
+              } catch {
+                // ignore transient polling failures
+              }
+            }
+          })();
+
+          return;
+        }
+
+        // Default slash response: persist assistant output immediately.
         const assistant = { id: null, role: "assistant", content: result.text, ts: nowTs(), model: "system", meta: { slash: true } };
         state.messages.push(assistant);
         await appendToChat("assistant", assistant.content, assistant.meta);
@@ -2239,6 +2391,7 @@ async function send() {
       autoGrow();
       return;
     } finally {
+      // Only block UI while executing the slash command itself.
       setGenerating(false);
     }
   }

@@ -1,5 +1,115 @@
 const el = (id) => document.getElementById(id);
 
+// ---------- Routing / pages ----------
+const pages = {
+  home: el("pageHome"),
+  chat: el("pageChat"),
+  library: el("pageLibrary"),
+  models: el("pageModels"),
+  settings: el("pageSettings"),
+  chats: el("pageChats"),
+  help: el("pageHelp"),
+};
+
+const composer = el("composer");
+
+const navHome = el("navHome");
+const navChat = el("navChat");
+const navLibrary = el("navLibrary");
+const navModels = el("navModels");
+const navSettingsNav = el("navSettingsNav");
+const btnChatsPage = el("btnChatsPage");
+const btnModelQuick = el("btnModelQuick");
+const currentModelLabel = el("currentModelLabel");
+
+function _setActiveNav(key){
+  const map = { home: navHome, chat: navChat, library: navLibrary, models: navModels, settings: navSettingsNav };
+  Object.entries(map).forEach(([k, btn]) => {
+    btn?.classList.toggle("active", k === key);
+  });
+}
+
+function showPage(key){
+  // Restore sidebar layout when leaving the dedicated chats page
+  if (document.body.dataset.route === "chats" && key !== "chats") {
+    unmountChatsToSidebar();
+  }
+
+  Object.entries(pages).forEach(([k, node]) => {
+    node?.classList.toggle("hidden", k !== key);
+  });
+
+  document.body.dataset.route = key;
+  _setActiveNav(key);
+
+  // Composer only on chat page
+  composer?.classList.toggle("hidden", key !== "chat");
+
+  // Keep sidebar context in sync
+  if (key === "chat") {
+    setTab("chats");
+  } else if (key === "library") {
+    setTab("docs");
+    try { loadDocs(); } catch {}
+  }
+}
+
+function parseRoute(){
+  const h = (location.hash || "").replace(/^#/, "");
+  const path = h.startsWith("/") ? h : "/home";
+  const seg = path.split("/").filter(Boolean);
+  const page = (seg[0] || "home").toLowerCase();
+  if (!pages[page]) return { page: "home" };
+  return { page };
+}
+
+function navigate(page){
+  location.hash = `#/${page}`;
+}
+
+function initRouter(){
+  navHome?.addEventListener("click", ()=> navigate("home"));
+  navChat?.addEventListener("click", ()=> navigate("chat"));
+  navLibrary?.addEventListener("click", ()=> navigate("library"));
+  navModels?.addEventListener("click", ()=> navigate("models"));
+  navSettingsNav?.addEventListener("click", ()=> navigate("settings"));
+
+  btnChatsPage?.addEventListener("click", ()=> navigate("chats"));
+  btnModelQuick?.addEventListener("click", ()=> {
+    navigate("settings");
+    // defer tab switch until mounted
+    setTimeout(()=>{
+      document.querySelector('[data-settings-tab="model"]')?.click();
+    }, 0);
+  });
+
+  el("homeNewChat")?.addEventListener("click", ()=> {
+    navigate("chat");
+    el("btnNewChat")?.click();
+  });
+  el("homeGoChat")?.addEventListener("click", ()=> navigate("chat"));
+  el("homeGoLibrary")?.addEventListener("click", ()=> navigate("library"));
+  el("homeGoSettings")?.addEventListener("click", ()=> navigate("settings"));
+
+  window.addEventListener("hashchange", ()=> {
+    const { page } = parseRoute();
+    showPage(page);
+    if (page === "models") loadModelsPage();
+    if (page === "library") loadLibraryPage();
+    if (page === "settings") mountSettingsIntoPage();
+    if (page === "help") mountHelpIntoPage();
+    if (page === "chats") mountChatsIntoPage();
+  });
+
+  const { page } = parseRoute();
+  showPage(page);
+  if (page === "models") loadModelsPage();
+  if (page === "library") loadLibraryPage();
+  if (page === "settings") mountSettingsIntoPage();
+  if (page === "help") mountHelpIntoPage();
+  if (page === "chats") mountChatsIntoPage();
+}
+
 const chatEl = el("chat");
 const promptEl = el("prompt");
 const modelSelect = el("modelSelect");
@@ -68,20 +178,11 @@ function toast(title, body = "", ms = 1600){
 let lastFocus = null;
 
 function openSettings(){
-  if(!settingsOverlay || !settingsModal) return;
-  lastFocus = document.activeElement;
-  settingsOverlay.classList.remove("hidden");
-  settingsModal.classList.remove("hidden");
-  // focus first interactive element
-  const first = settingsModal.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
-  first?.focus();
+  navigate("settings");
 }
 
 function closeSettings(){
-  if(!settingsOverlay || !settingsModal) return;
-  settingsOverlay.classList.add("hidden");
-  settingsModal.classList.add("hidden");
-  lastFocus?.focus?.();
+  navigate("home");
 }
 
 btnSettings?.addEventListener("click", openSettings);
@@ -90,8 +191,20 @@ settingsOverlay?.addEventListener("click", closeSettings);
 
 // Focus trap + Escape
 document.addEventListener("keydown", (e)=>{
-  if(e.key === "Escape" && settingsModal && !settingsModal.classList.contains("hidden")) {
+  if(e.key === "Escape" && document.body?.dataset?.route === "settings") {
     closeSettings();
+    return;
+  }
+  if(e.key === "Escape" && document.body?.dataset?.route === "help") {
+    navigate("home");
+    return;
+  }
+  if(e.key === "Escape" && shortcutsModal && !shortcutsModal.classList.contains("hidden")) {
+    hideShortcuts();
+    return;
+  }
+  if(e.key === "Escape" && modal && !modal.classList.contains("hidden")) {
+    closeModal();
     return;
   }
   if(e.key !== "Tab") return;
@@ -145,7 +258,6 @@ const DEFAULT_UI = {
   uiChatWidth: "comfortable",
   uiCodeWrap: "nowrap",
   uiReduceMotion: false,
-  visualTheme: "deep-ocean",
 
   chatShowTimestamps: false,
   chatAutoScroll: true,
@@ -158,6 +270,11 @@ const DEFAULT_UI = {
 
   // Model/RAG
   ragToggle: true, // default ON, tucked away
+
+  // Sources (defaults can be overridden in Settings)
+  srcZimDir: "~/zims",
+  srcEbooksDir: "~/Ebooks",
+  srcKiwixUrl: "",
 };
 
 function readUIState(){
@@ -172,7 +289,6 @@ function readUIState(){
   s.uiChatWidth= pick("uiChatWidth") || s.uiChatWidth;
   s.uiCodeWrap = pick("uiCodeWrap") || s.uiCodeWrap;
   s.uiReduceMotion = chk("uiReduceMotion");
-  s.visualTheme = pick("visualTheme") || s.visualTheme;
 
   s.chatShowTimestamps = chk("chatShowTimestamps");
   s.chatAutoScroll = chk("chatAutoScroll");
@@ -185,6 +301,10 @@ function readUIState(){
 
   // RAG toggle lives only in settings
   s.ragToggle = get("ragToggle") ? chk("ragToggle") : true;
+
+  s.srcZimDir = pick("srcZimDir") || s.srcZimDir;
+  s.srcEbooksDir = pick("srcEbooksDir") || s.srcEbooksDir;
+  s.srcKiwixUrl = pick("srcKiwixUrl") || s.srcKiwixUrl;
 
   return s;
 }
@@ -204,7 +324,6 @@ function writeUIState(s){
   setVal("uiChatWidth", s.uiChatWidth);
   setVal("uiCodeWrap", s.uiCodeWrap);
   setChk("uiReduceMotion", s.uiReduceMotion);
-  setVal("visualTheme", s.visualTheme);
 
   setChk("chatShowTimestamps", s.chatShowTimestamps);
   setChk("chatAutoScroll", s.chatAutoScroll);
@@ -216,6 +335,10 @@ function writeUIState(s){
   setChk("confirmClearChat", s.confirmClearChat);
 
   setChk("ragToggle", s.ragToggle);
+
+  setVal("srcZimDir", s.srcZimDir);
+  setVal("srcEbooksDir", s.srcEbooksDir);
+  setVal("srcKiwixUrl", s.srcKiwixUrl);
 }
 
 function applyUIState(s){
@@ -225,7 +348,6 @@ function applyUIState(s){
   r.dataset.chatWidth = s.uiChatWidth;
   r.dataset.codeWrap = s.uiCodeWrap;
   r.dataset.reduceMotion = s.uiReduceMotion ? "1" : "0";
-  r.dataset.visualTheme = s.visualTheme;
 }
 
 function loadUIState(){
@@ -247,6 +369,7 @@ function saveUIState(){
   const s = readUIState();
   localStorage.setItem("ui.settings", JSON.stringify(s));
   applyUIState(s);
+  syncSourcesFromUiToControls(s);
   toast("Saved", "Settings updated.");
   return s;
 }
@@ -255,8 +378,414 @@ function resetUIState(){
   localStorage.removeItem("ui.settings");
   writeUIState({...DEFAULT_UI});
   applyUIState({...DEFAULT_UI});
+  syncSourcesFromUiToControls({...DEFAULT_UI});
   toast("Reset", "Back to defaults.");
 }
+
+// ---------- Settings mounting into Settings page ----------
+function mountSettingsIntoPage(){
+  const mount = el("settingsMount");
+  if (!mount || !settingsModal) return;
+  if (settingsModal.parentElement !== mount) {
+    // Ensure visible as a page (not a modal)
+    settingsOverlay?.classList.add("hidden");
+    settingsModal.classList.remove("hidden");
+    settingsModal.style.position = "static";
+    mount.appendChild(settingsModal);
+  }
+}
+
+// ---------- Help mounting into Help page ----------
+function mountHelpIntoPage(){
+  const mount = el("helpMount");
+  if (!mount || !shortcutsModal) return;
+  if (shortcutsModal.parentElement !== mount) {
+    shortcutsOverlay?.classList.add("hidden");
+    shortcutsModal.classList.remove("hidden");
+    shortcutsModal.style.position = "static";
+    mount.appendChild(shortcutsModal);
+  }
+}
+
+// ---------- Chats mounting into Chats page ----------
+let _chatsMountPrev = null;
+function mountChatsIntoPage(){
+  const mount = el("chatsMount");
+  if (!mount || !panelChats) return;
+  if (!_chatsMountPrev) {
+    _chatsMountPrev = { parent: panelChats.parentElement, next: panelChats.nextSibling };
+  }
+  if (panelChats.parentElement !== mount) {
+    mount.appendChild(panelChats);
+    panelChats.classList.remove("hidden");
+  }
+}
+
+function unmountChatsToSidebar(){
+  if (!_chatsMountPrev || !panelChats) return;
+  const { parent, next } = _chatsMountPrev;
+  if (!parent) return;
+  if (next) parent.insertBefore(panelChats, next);
+  else parent.appendChild(panelChats);
+}
+
+// ---------- Library page helpers ----------
+const kiwixZimDirEl = el("kiwixZimDir");
+const btnReloadZims = el("btnReloadZims");
+const zimsListEl = el("zimsList");
+
+const ebooksDirEl = el("ebooksDir");
+const epubQueryEl = el("epubQuery");
+const btnReloadEpubs = el("btnReloadEpubs");
+const btnIngestTopEpub = el("btnIngestTopEpub");
+const btnIngestAllEpubs = el("btnIngestAllEpubs");
+const epubsListEl = el("epubsList");
+const epubStatusEl = el("epubStatus");
+
+const btnReloadIngestedEpubs = el("btnReloadIngestedEpubs");
+const ingestedEpubsListEl = el("ingestedEpubsList");
+const ingestedEpubsStatusEl = el("ingestedEpubsStatus");
+
+let _lastEpubItems = [];
+
+const srcZimDirEl = el("srcZimDir");
+const srcEbooksDirEl = el("srcEbooksDir");
+const srcKiwixUrlEl = el("srcKiwixUrl");
+
+function _ui(){
+  try{
+    const raw = localStorage.getItem("ui.settings");
+    return raw ? { ...DEFAULT_UI, ...JSON.parse(raw) } : { ...DEFAULT_UI };
+  } catch {
+    return { ...DEFAULT_UI };
+  }
+}
+
+function _saveUiPatch(patch){
+  const s = _ui();
+  const next = { ...s, ...patch };
+  try { localStorage.setItem("ui.settings", JSON.stringify(next)); } catch {}
+  return next;
+}
+
+function _setText(node, text){
+  if (!node) return;
+  node.textContent = text;
+}
+
+function _setIfNotEditing(input, value){
+  if (!input) return;
+  const v = (value ?? "").toString();
+  if (document.activeElement === input) return;
+  if (input.value === v) return;
+  input.value = v;
+}
+
+function syncSourcesFromUiToControls(s = null){
+  const ui = s || _ui();
+  _setIfNotEditing(kiwixZimDirEl, ui.srcZimDir || "~/zims");
+  _setIfNotEditing(ebooksDirEl, ui.srcEbooksDir || "~/Ebooks");
+
+  _setIfNotEditing(srcZimDirEl, ui.srcZimDir || "~/zims");
+  _setIfNotEditing(srcEbooksDirEl, ui.srcEbooksDir || "~/Ebooks");
+  _setIfNotEditing(srcKiwixUrlEl, ui.srcKiwixUrl || "");
+}
+
+async function loadZims(){
+  const s = _ui();
+  const zim_dir = (kiwixZimDirEl?.value || s.srcZimDir || "").trim();
+  if (kiwixZimDirEl && !kiwixZimDirEl.value) kiwixZimDirEl.value = zim_dir;
+  _setText(epubStatusEl, "");
+  if (!zimsListEl) return;
+  zimsListEl.innerHTML = "";
+
+  if (!zim_dir){
+    zimsListEl.innerHTML = `<div class="muted">Set a ZIM directory in Settings → Sources.</div>`;
+    return;
+  }
+
+  const qs = new URLSearchParams();
+  if (zim_dir) qs.set("zim_dir", zim_dir);
+  const res = await fetch(`/api/kiwix/zims?${qs.toString()}`);
+  const j = await res.json().catch(()=> ({}));
+  const zims = j.zims || [];
+
+  if (!Array.isArray(zims) || zims.length === 0){
+    zimsListEl.innerHTML = `<div class="muted">No ZIMs found.</div>`;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const z of zims){
+    const item = document.createElement("div");
+    item.className = "listItem";
+    const title = (z.title || z.file || z.name || "").toString();
+    const file = (z.file || z.path || "").toString();
+    item.innerHTML = `<div><div class="itemTitle">${escapeHtml(title || file)}</div><div class="itemSub">${escapeHtml(file)}</div></div>`;
+    frag.appendChild(item);
+  }
+  zimsListEl.appendChild(frag);
+}
+
+async function loadEpubs(opts = null){
+  const s = _ui();
+  const library_dir = (ebooksDirEl?.value || s.srcEbooksDir || "").trim();
+  if (ebooksDirEl && !ebooksDirEl.value) ebooksDirEl.value = library_dir;
+  const q = (epubQueryEl?.value || "").trim();
+  const force = !!(opts && opts.force);
+
+  if (!epubsListEl) return;
+  epubsListEl.innerHTML = "";
+  if (!library_dir){
+    _setText(epubStatusEl, "Set a library directory in Settings → Sources.");
+    epubsListEl.innerHTML = `<div class="muted">No library configured.</div>`;
+    return;
+  }
+
+  _setText(epubStatusEl, "Loading…");
+
+  const qs = new URLSearchParams();
+  if (q) qs.set("q", q);
+  qs.set("limit", "25");
+  if (library_dir) qs.set("library_dir", library_dir);
+  if (force) qs.set("force", "1");
+
+  const res = await fetch(`/api/epubs?${qs.toString()}`);
+  const j = await res.json().catch(()=> ({}));
+  const items = j.items || [];
+  _lastEpubItems = Array.isArray(items) ? items : [];
+  _setText(epubStatusEl, `${items.length || 0} result(s)`);
+
+  if (!Array.isArray(items) || items.length === 0){
+    epubsListEl.innerHTML = `<div class="muted">No EPUBs found.</div>`;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  items.forEach((it, idx)=>{
+    const path = (it.path || "").toString();
+    const ingested = !!it.ingested;
+    const row = document.createElement("div");
+    row.className = "listItem";
+    row.innerHTML = `<div><div class="itemTitle">${escapeHtml(path)}</div><div class="itemSub">${ingested ? "EPUB • Ingested" : "EPUB"}</div></div><div class="row"><button class="btn" data-epub-path="${escapeAttr(path)}" ${ingested ? "disabled" : ""}>${ingested ? "Ingested" : "Ingest"}</button></div>`;
+    frag.appendChild(row);
+  });
+  epubsListEl.appendChild(frag);
+
+  epubsListEl.querySelectorAll("button[data-epub-path]").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const p = btn.getAttribute("data-epub-path") || "";
+      await ingestEpub(p);
+    });
+  });
+}
+
+async function ingestEpub(path){
+  const s = _ui();
+  const library_dir = (ebooksDirEl?.value || s.srcEbooksDir || "").trim();
+  if (!path) return;
+  _setText(epubStatusEl, "Ingesting…");
+
+  const res = await fetch("/api/epubs/ingest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, library_dir }),
+  });
+  const j = await res.json().catch(()=> ({}));
+  if (!res.ok || j.ok === false){
+    _setText(epubStatusEl, j.error || j.detail || `Failed (${res.status})`);
+    return;
+  }
+  if (j.already_ingested) {
+    _setText(epubStatusEl, `Already ingested (doc_id ${j.doc_id})`);
+    toast("Already ingested", path);
+  } else {
+    _setText(epubStatusEl, `Ingested (doc_id ${j.doc_id})`);
+    toast("Ingested", path);
+  }
+
+  loadIngestedEpubs().catch(()=> {});
+  loadEpubs().catch(()=> {});
+}
+
+let _epubIngestAllPoll = null;
+
+async function _pollEpubIngestAll(library_dir){
+  if (_epubIngestAllPoll) {
+    clearInterval(_epubIngestAllPoll);
+    _epubIngestAllPoll = null;
+  }
+
+  const tick = async ()=> {
+    const qs = new URLSearchParams();
+    if (library_dir) qs.set("library_dir", library_dir);
+    const res = await fetch(`/api/epubs/ingest_all/status?${qs.toString()}`);
+    const j = await res.json().catch(()=> ({}));
+
+    const running = !!j.running;
+    const total = Number(j.to_ingest ?? j.total ?? 0);
+    const processed = Number(j.processed ?? 0);
+    const ingested = Number(j.ingested ?? 0);
+    const skipped = Number(j.skipped ?? 0) + Number(j.already_ingested ?? 0);
+    const failed = Number(j.failed ?? 0);
+    const cur = (j.current_path || "").toString();
+
+    if (running) {
+      const pct = (total > 0) ? Math.floor((processed / total) * 100) : 0;
+      const head = `Ingesting ${processed}/${total} (${pct}%)`;
+      const tail = ` • ok ${ingested} • skipped ${skipped} • failed ${failed}`;
+      _setText(epubStatusEl, head + tail + (cur ? `\n${cur}` : ""));
+      btnIngestAllEpubs && (btnIngestAllEpubs.disabled = true);
+      return;
+    }
+
+    // done
+    _setText(epubStatusEl, failed ? `Done (failed ${failed})` : "Done");
+    btnIngestAllEpubs && (btnIngestAllEpubs.disabled = false);
+    clearInterval(_epubIngestAllPoll);
+    _epubIngestAllPoll = null;
+    loadIngestedEpubs().catch(()=> {});
+    loadEpubs({ force: true }).catch(()=> {});
+  };
+
+  await tick().catch(()=> {});
+  _epubIngestAllPoll = setInterval(()=> tick().catch(()=> {}), 1200);
+}
+
+async function ingestAllEpubResults(){
+  const s = _ui();
+  const library_dir = (ebooksDirEl?.value || s.srcEbooksDir || "").trim();
+  const query = (epubQueryEl?.value || "").trim();
+  if (!library_dir) {
+    toast("EPUB", "Set a library directory first.");
+    return;
+  }
+
+  _setText(epubStatusEl, "Starting ingest…");
+  btnIngestAllEpubs && (btnIngestAllEpubs.disabled = true);
+
+  const res = await fetch("/api/epubs/ingest_all", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ library_dir, concurrency: 2, query }),
+  });
+  const j = await res.json().catch(()=> ({}));
+  if (!res.ok || j.ok === false){
+    _setText(epubStatusEl, j.error || j.detail || `Failed (${res.status})`);
+    btnIngestAllEpubs && (btnIngestAllEpubs.disabled = false);
+    return;
+  }
+  toast("EPUB", "Ingest started.");
+  await _pollEpubIngestAll(library_dir);
+}
+
+async function loadIngestedEpubs(){
+  if (!ingestedEpubsListEl) return;
+  ingestedEpubsListEl.innerHTML = "";
+  _setText(ingestedEpubsStatusEl, "Loading…");
+
+  const qs = new URLSearchParams();
+  qs.set("source", "epub");
+  const res = await fetch(`/api/library/ingested?${qs.toString()}`);
+  const j = await res.json().catch(()=> ({}));
+  const items = j.items || [];
+
+  if (!Array.isArray(items) || items.length === 0){
+    _setText(ingestedEpubsStatusEl, "0");
+    ingestedEpubsListEl.innerHTML = `<div class="muted">No ingested EPUBs yet.</div>`;
+    return;
+  }
+
+  _setText(ingestedEpubsStatusEl, `${items.length} book(s)`);
+  const frag = document.createDocumentFragment();
+  for (const it of items){
+    const title = (it.title || it.filename || "").toString();
+    const author = (it.author || "").toString();
+    const path = (it.path || "").toString();
+    const row = document.createElement("div");
+    row.className = "listItem";
+    row.innerHTML = `<div><div class="itemTitle">${escapeHtml(title || "(untitled)")}</div><div class="itemSub">${escapeHtml([author, path].filter(Boolean).join(" • ") || "EPUB")}</div></div>`;
+    frag.appendChild(row);
+  }
+  ingestedEpubsListEl.appendChild(frag);
+}
+
+async function loadLibraryPage(){
+  syncSourcesFromUiToControls();
+  loadIngestedEpubs().catch(()=> {});
+  loadEpubs().catch(()=> {});
+}
+
+kiwixZimDirEl?.addEventListener("change", ()=>{
+  const v = (kiwixZimDirEl.value || "").trim();
+  if (v) _saveUiPatch({ srcZimDir: v });
+  syncSourcesFromUiToControls();
+});
+
+ebooksDirEl?.addEventListener("change", ()=>{
+  const v = (ebooksDirEl.value || "").trim();
+  if (v) _saveUiPatch({ srcEbooksDir: v });
+  syncSourcesFromUiToControls();
+});
+
+srcZimDirEl?.addEventListener("change", ()=>{
+  const v = (srcZimDirEl.value || "").trim();
+  _saveUiPatch({ srcZimDir: v });
+  syncSourcesFromUiToControls();
+});
+
+srcEbooksDirEl?.addEventListener("change", ()=>{
+  const v = (srcEbooksDirEl.value || "").trim();
+  _saveUiPatch({ srcEbooksDir: v });
+  syncSourcesFromUiToControls();
+});
+
+srcKiwixUrlEl?.addEventListener("change", ()=>{
+  const v = (srcKiwixUrlEl.value || "").trim();
+  _saveUiPatch({ srcKiwixUrl: v });
+  syncSourcesFromUiToControls();
+});
+
+btnReloadZims?.addEventListener("click", ()=> loadZims().catch(e=> toast("ZIMs", String(e))));
+btnReloadEpubs?.addEventListener("click", ()=> loadEpubs({ force: true }).catch(e=> toast("EPUBs", String(e))));
+btnReloadIngestedEpubs?.addEventListener("click", ()=> loadIngestedEpubs().catch(e=> toast("Ingested", String(e))));
+btnIngestAllEpubs?.addEventListener("click", ()=> ingestAllEpubResults().catch(e=> toast("EPUB", String(e))));
+btnIngestTopEpub?.addEventListener("click", async ()=> {
+  const first = epubsListEl?.querySelector("button[data-epub-path]:not([disabled])") || epubsListEl?.querySelector("button[data-epub-path]");
+  const p = first?.getAttribute("data-epub-path") || "";
+  if (!p) {
+    toast("EPUB", "No results to ingest.");
+    return;
+  }
+  await ingestEpub(p);
+});
+
+// ---------- Models page helpers ----------
+const btnReloadModels = el("btnReloadModels");
+const modelsListEl = el("modelsList");
+
+async function loadModelsPage(){
+  if (!modelsListEl) return;
+  modelsListEl.innerHTML = "<div class=\"muted\">Loading…</div>";
+  const mj = await api("/api/models");
+  const models = mj.models || [];
+  if (!Array.isArray(models) || models.length === 0){
+    modelsListEl.innerHTML = "<div class=\"muted\">No models found.</div>";
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const name of models){
+    const row = document.createElement("div");
+    row.className = "listItem";
+    row.innerHTML = `<div><div class=\"itemTitle\">${escapeHtml(String(name))}</div><div class=\"itemSub\">Ollama</div></div>`;
+    frag.appendChild(row);
+  }
+  modelsListEl.innerHTML = "";
+  modelsListEl.appendChild(frag);
+}
+
+btnReloadModels?.addEventListener("click", ()=> loadModelsPage().catch(e=> toast("Models", String(e))));
 
 // Buttons (if present)
 document.getElementById("btnSaveSettings")?.addEventListener("click", saveUIState);
@@ -266,7 +795,7 @@ document.getElementById("btnResetSettings")?.addEventListener("click", resetUISt
 document.addEventListener("input", (e)=>{
   if(!settingsModal || settingsModal.classList.contains("hidden")) return;
   const ids = new Set([
-    "uiFontSize","uiDensity","uiChatWidth","uiCodeWrap","uiReduceMotion","visualTheme"
+    "uiFontSize","uiDensity","uiChatWidth","uiCodeWrap","uiReduceMotion"
   ]);
   if(e.target?.id && ids.has(e.target.id)){
     applyUIState(readUIState());
@@ -339,7 +868,7 @@ const state = {
   },
   messages: [],
   docs: [],
-  prefs: { rag_enabled: 0, doc_ids: null },
+  prefs: { rag_enabled: 1, doc_ids: null },
   lastResearchRunId: null,
 };
 
@@ -374,76 +903,9 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-function prefersReducedMotion() {
-  return document.documentElement.dataset.reduceMotion === "1" ||
-    (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-}
-
-/* Ambient floating bubbles (water/nature vibe) */
-function initAmbientBubbles(){
-  if (prefersReducedMotion()) return;
-  if (document.getElementById("fxBubbles")) return;
-
-  const host = document.createElement("div");
-  host.id = "fxBubbles";
-  host.className = "fxBubbles";
-  host.setAttribute("aria-hidden", "true");
-
-  const N = 10;
-  for (let i = 0; i < N; i++){
-    const b = document.createElement("div");
-    b.className = "fxBubble";
-
-    const size = 120 + Math.random() * 240;
-    const left = Math.random() * 100;
-    const top  = Math.random() * 100;
-    const dur  = 10 + Math.random() * 14;
-    const alpha = 0.18 + Math.random() * 0.22;
-
-    const dx = (Math.random() * 60 - 30).toFixed(1) + "px";
-    const dy = (Math.random() * 70 - 35).toFixed(1) + "px";
-
-    b.style.left = left + "%";
-    b.style.top = top + "%";
-    b.style.setProperty("--size", size.toFixed(0) + "px");
-    b.style.setProperty("--dur", dur.toFixed(1) + "s");
-    b.style.setProperty("--alpha", alpha.toFixed(3));
-    b.style.setProperty("--dx", dx);
-    b.style.setProperty("--dy", dy);
-
-    host.appendChild(b);
-  }
-
-  document.body.prepend(host);
-}
-
-/* Click ripple */
-function installRipples(){
-  document.addEventListener("pointerdown", (e) => {
-    if (prefersReducedMotion()) return;
-
-    const target = e.target.closest?.(".btn, .iconbtn, .tab, .settingsTab, .chatItem, .docItem");
-    if (!target) return;
-
-    const r = target.getBoundingClientRect();
-    const s = Math.max(r.width, r.height) * 1.15;
-
-    const dot = document.createElement("span");
-    dot.className = "ripple";
-    dot.style.width = dot.style.height = s + "px";
-    dot.style.left = (e.clientX - r.left - s/2) + "px";
-    dot.style.top  = (e.clientY - r.top  - s/2) + "px";
-
-    target.appendChild(dot);
-    dot.addEventListener("animationend", () => dot.remove());
-  }, { passive: true });
-}
-
-/* Make topbar react to chat scroll */
-function updateTopbarScrolled(){
-  const topbar = document.querySelector(".topbar");
-  if (!topbar || !chatEl) return;
-  topbar.classList.toggle("scrolled", chatEl.scrollTop > 8);
+function escapeAttr(s){
+  // safe enough for attribute values we control
+  return escapeHtml(s).replaceAll("`", "&#096;");
 }
 
 // code blocks + inline `code` + newlines
@@ -634,6 +1096,11 @@ function hideShortcuts() {
   shortcutsModal?.classList.add("hidden");
 }
 
+// Help button + shortcuts modal wiring
+// Help is a page now (see router)
+btnShortcutsClose?.addEventListener("click", hideShortcuts);
+shortcutsOverlay?.addEventListener("click", hideShortcuts);
+
 function toggleChatSearch() {
   openSidebar();
   setTab("chats");
@@ -726,7 +1193,6 @@ chatEl?.addEventListener("scroll", () => {
     showScrollHint(false);
   }
   updateScrollButton();
-  updateTopbarScrolled();
 });
 
 function setGenerating(on) {
@@ -758,14 +1224,30 @@ slashPalette.addEventListener("mousedown", (e) => {
 promptEl.addEventListener("keydown", (e) => {
   const mode = (document.getElementById("sendKey")?.value || "ctrlenter");
 
+  const cur = promptEl.value || "";
+  const isSlash = cur.startsWith("/");
+  const isSlashCommandOnly = isSlash && !/\s/.test(cur);
+
   if (mode === "enter") {
     if (e.key === "Enter" && !e.shiftKey) {
-      if (promptEl.value.startsWith("/")) return;
-      e.preventDefault();
-      send();
-      return;
+      // If we're still typing the slash command token (no args yet), do not send.
+      // Let the slash palette handle completion, or fall back to a newline.
+      if (!isSlashCommandOnly) {
+        e.preventDefault();
+        send();
+        return;
+      }
     }
   } else {
+    // Slash commands should be quick to run; allow plain Enter to send them.
+    if (isSlash && e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      // If we're still typing the command token, keep Enter for completion.
+      if (!isSlashCommandOnly) {
+        e.preventDefault();
+        send();
+        return;
+      }
+    }
     // Ctrl/Cmd+Enter sends (matches placeholder)
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
       e.preventDefault();
@@ -795,8 +1277,10 @@ promptEl.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Tab" || e.key === "Enter") {
-    // Only hijack Enter if input begins with "/" (so it doesn't break normal send)
-    if (e.key === "Enter" && !promptEl.value.startsWith("/")) return;
+    // Only hijack Enter for completion (Shift+Enter keeps newline).
+    if (e.key === "Enter" && e.shiftKey) return;
+    // If we already have args (whitespace), we're no longer completing a command.
+    if (e.key === "Enter" && !isSlashCommandOnly) return;
     e.preventDefault();
     const picked = list[slashActive];
     if (picked) insertSlash(picked.cmd);
@@ -808,13 +1292,16 @@ promptEl.addEventListener("keydown", (e) => {
 promptEl.addEventListener("input", () => {
   autoGrow();
   const v = promptEl.value || "";
-  if (v.startsWith("/")) {
+  // Only show the slash palette while typing the command token (no whitespace yet).
+  // Once arguments start, stop interpreting input as a new slash command.
+  const cmdOnly = v.startsWith("/") && !/\s/.test(v);
+  if (cmdOnly) {
     if (!slashOpen) openSlash();
     slashActive = 0;
     buildSlashList(v.slice(1));
-  } else if (slashOpen) {
-    closeSlash();
+    return;
   }
+  if (slashOpen) closeSlash();
 });
 
 document.addEventListener("keydown", (e) => {
@@ -843,7 +1330,14 @@ document.addEventListener("keydown", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && isGenerating && abortCtl) abortCtl.abort();
+  if (e.key !== "Escape") return;
+
+  const settingsOpen = settingsModal && !settingsModal.classList.contains("hidden");
+  const shortcutsOpen = shortcutsModal && !shortcutsModal.classList.contains("hidden");
+  const modalOpen = modal && !modal.classList.contains("hidden");
+  if (settingsOpen || shortcutsOpen || modalOpen) return;
+
+  if (isGenerating && abortCtl) abortCtl.abort();
 });
 
 btnSend.addEventListener("click", send);
@@ -908,10 +1402,9 @@ async function apiGet(path) {
 async function loadPrefs(){
   if (!currentChatId) return;
   const j = await api(`/api/chats/${currentChatId}/prefs`);
-  state.prefs = j.prefs || { rag_enabled:0, doc_ids:null };
+  state.prefs = j.prefs || { rag_enabled:1, doc_ids:null };
   ragToggle.checked = !!state.prefs.rag_enabled;
   updateRagSummary();
-  updateDocsAllNoneButtons();
 }
 
 async function savePrefs(patch){
@@ -944,37 +1437,11 @@ function updateRagSummary(){
 
 /* ---------------- docs UI ---------------- */
 
-function _docsSelectionMode() {
-  // Returns: "all" | "none" | "some"
-  const sel = state.prefs?.doc_ids ?? null;
-  if (sel === null) return "all";
-  if (!Array.isArray(sel) || sel.length === 0) return "none";
-
-  // Defensive: if backend ever returns the full list instead of NULL,
-  // treat it as "all" so the UI stays consistent.
-  const allIds = (state.docs || []).map(x => Number(x.id)).filter(Number.isFinite).sort((a, b) => a - b);
-  const nextSorted = sel.map(Number).filter(Number.isFinite).slice().sort((a, b) => a - b);
-  const same = allIds.length && allIds.length === nextSorted.length && allIds.every((v, i) => v === nextSorted[i]);
-  return same ? "all" : "some";
-}
-
-function updateDocsAllNoneButtons() {
-  if (!btnDocsAll || !btnDocsNone) return;
-
-  const mode = _docsSelectionMode();
-  btnDocsAll.classList.toggle("toggleActive", mode === "all");
-  btnDocsNone.classList.toggle("toggleActive", mode === "none");
-
-  btnDocsAll.disabled = mode === "all";
-  btnDocsNone.disabled = mode === "none";
-}
-
 async function loadDocs(){
   const j = await api("/api/docs");
   state.docs = j.docs || [];
   renderDocsList();
   updateRagSummary();
-  updateDocsAllNoneButtons();
 }
 
 function renderDocsList(){
@@ -1076,21 +1543,17 @@ function renderDocsList(){
     item.append(top);
     docsList.appendChild(item);
   }
-
-  updateDocsAllNoneButtons();
 }
 
 btnDocsAll?.addEventListener("click", async () => {
   if (!currentChatId) return;
   await savePrefs({ doc_ids: null });
   renderDocsList();
-  updateDocsAllNoneButtons();
 });
 btnDocsNone?.addEventListener("click", async () => {
   if (!currentChatId) return;
   await savePrefs({ doc_ids: [] });
   renderDocsList();
-  updateDocsAllNoneButtons();
 });
 
 fileUpload?.addEventListener("change", async () => {
@@ -1207,26 +1670,15 @@ async function selectChat(chatId){
   currentChatId = chatId;
   localStorage.setItem("currentChatId", chatId);
 
-  try {
-    const j = await api(`/api/chats/${chatId}`);
-    state.messages = (j.messages || []).map(m => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      ts: fmtTsFromEpoch(m.created_at),
-      model: m.model || "",
-      meta: m.meta_json || null
-    }));
-  } catch (e) {
-    if (e.message.includes("404") || e.message.includes("chat not found")) {
-      // Chat doesn't exist, create new one
-      currentChatId = null;
-      localStorage.removeItem("currentChatId");
-      await ensureChatSelected();
-      return;
-    }
-    throw e;
-  }
+  const j = await api(`/api/chats/${chatId}`);
+  state.messages = (j.messages || []).map(m => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    ts: fmtTsFromEpoch(m.created_at),
+    model: m.model || "",
+    meta: m.meta_json || null
+  }));
 
   await loadPrefs();
   renderChat();
@@ -1261,37 +1713,6 @@ function msgNode(m) {
   const bubble = document.createElement("div");
   bubble.className = "bubble";
 
-  // New message entrance animation
-  if (m.__new) wrap.classList.add("pop");
-
-  // Pointer glow tracking (sets CSS vars used by .bubble::before)
-  bubble.addEventListener("pointermove", (e) => {
-    const r = bubble.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * 100;
-    const y = ((e.clientY - r.top) / r.height) * 100;
-    bubble.style.setProperty("--mx", x.toFixed(1) + "%");
-    bubble.style.setProperty("--my", y.toFixed(1) + "%");
-  }, { passive: true });
-
-  bubble.addEventListener("pointerleave", () => {
-    bubble.style.removeProperty("--mx");
-    bubble.style.removeProperty("--my");
-  });
-
-  // Dblclick bubble to copy (won't fire if user is selecting text)
-  bubble.addEventListener("dblclick", async () => {
-    const sel = window.getSelection?.();
-    if (sel && String(sel).trim().length) return;
-
-    try {
-      await navigator.clipboard.writeText(content || "");
-      toast?.("Copied", role === "user" ? "User message" : "Assistant message");
-      setStatus?.(true, "Copied");
-    } catch {
-      // ignore
-    }
-  });
-
   const metaEl = document.createElement("div");
   metaEl.className = "meta";
 
@@ -1311,7 +1732,6 @@ function msgNode(m) {
   btnCopy.onclick = async () => {
     try {
       await navigator.clipboard.writeText(content || "");
-      toast?.("Copied", "Message copied.");
       setStatus(true, "Copied");
     } catch {
       alert("Copy failed (clipboard blocked)");
@@ -1395,7 +1815,6 @@ function renderChat() {
     frag.appendChild(node.wrap);
   });
   chatEl.appendChild(frag);
-  state.messages.forEach(m => { if (m.__new) delete m.__new; });
 
   // Only auto-scroll if user was already at bottom
   if (wasAtBottom) {
@@ -1540,6 +1959,7 @@ async function refreshStatusAndModels() {
       if (!state.model || !models.includes(state.model)) state.model = models[0];
     }
     modelSelect.value = state.model || "";
+    if (currentModelLabel) currentModelLabel.textContent = state.model || "—";
     saveState();
   } catch {
     setStatus(false, "Can't reach backend / Ollama");
@@ -1548,6 +1968,7 @@ async function refreshStatusAndModels() {
 
 modelSelect.addEventListener("change", () => {
   state.model = modelSelect.value;
+  if (currentModelLabel) currentModelLabel.textContent = state.model || "—";
   saveState();
 });
 
@@ -1749,23 +2170,73 @@ async function runSlashCommand(text) {
     return { kind: "local", text: "Usage: /autosummary on | off | every <N> | now" };
   }
 
-  if (cmd === "/research") {
-    if (!rest) return { kind: "local", text: "Usage: /research <question>" };
+  if (cmd === "/research" || cmd === "/deep") {
+    if (!rest) return { kind: "local", text: "Usage: /research [--web|--offline] [--30m(min)] <question>" };
+
+    function parseBudgetTok(tok) {
+      const m = String(tok || "").trim().match(/^--(\d+(?:\.\d+)?)(s|m|h|d|mo)$/i);
+      if (!m) return null;
+      const n = parseFloat(m[1]);
+      if (!isFinite(n) || n <= 0) return null;
+      const u = String(m[2] || "").toLowerCase();
+      if (u === "s") return n;
+      if (u === "m") return n * 60;
+      if (u === "h") return n * 3600;
+      if (u === "d") return n * 86400;
+      if (u === "mo") return n * 30 * 86400;
+      return null;
+    }
+
+    // Offline-first by default. Add `--web` to explicitly enable web search.
+    let useWeb = false;
+    let timeBudgetSec = null;
+
+    const toks = String(rest || "").trim().split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (i < toks.length) {
+      const raw = toks[i];
+      const head = String(raw || "").toLowerCase();
+      if (head === "--web" || head === "web" || head === "online") {
+        useWeb = true;
+        i += 1;
+        continue;
+      }
+      if (head === "--offline" || head === "offline" || head === "--local") {
+        useWeb = false;
+        i += 1;
+        continue;
+      }
+      const budget = parseBudgetTok(raw);
+      if (budget != null) {
+        timeBudgetSec = budget;
+        i += 1;
+        continue;
+      }
+      break;
+    }
+
+    const q = toks.slice(i).join(" ").trim();
+    if (!q) return { kind: "local", text: "Usage: /research [--web|--offline] [--30m(min)] <question>" };
+
     const payload = {
       chat_id: currentChatId || null,
-      query: rest,
+      query: q,
       mode: "deep",
       use_docs: true,
-      use_web: true,
-      rounds: 3,
-      pages_per_round: 5,
-      doc_top_k: 6,
-      web_top_k: 6
+      use_web: useWeb,
+      rounds: 6,
+      pages_per_round: 10,
+      doc_top_k: 10,
+      web_top_k: 10,
     };
-    const j = await post("/api/research/run", payload);
+    if (timeBudgetSec != null) payload.time_budget_sec = timeBudgetSec;
+
+    // Start async so UI stays responsive.
+    const j = await post("/api/research/run_async", payload);
     state.lastResearchRunId = j.run_id;
     saveState();
-    return { kind: "local", text: `Run: ${j.run_id}\n\n${j.answer}` };
+    const modeHint = useWeb ? "web" : "offline";
+    return { kind: "research", run_id: j.run_id, mode: modeHint, time_budget_sec: timeBudgetSec };
   }
 
   if (cmd === "/trace") {
@@ -1810,11 +2281,92 @@ async function send() {
     try {
       const result = await runSlashCommand(text);
       if (result) {
-        const userMsg = { id: null, role: "user", content: text, ts: nowTs(), __new: true };
+        // Persist the user command.
+        const userMsg = { id: null, role: "user", content: text, ts: nowTs() };
         state.messages.push(userMsg);
         await appendToChat("user", text);
 
-        const assistant = { id: null, role: "assistant", content: result.text, ts: nowTs(), model: "system", meta: { slash: true }, __new: true };
+        // Special-case research: show progress immediately + poll in background.
+        if (result.kind === "research" && result.run_id) {
+          const runId = result.run_id;
+          const modeHint = result.mode || "offline";
+
+          const assistant = {
+            id: null,
+            role: "assistant",
+            content: `Run (${modeHint}): ${runId}\n\n(working... use /trace ${runId} to inspect)` ,
+            ts: nowTs(),
+            model: "system",
+            meta: { slash: true, research: true, run_id: runId, transient: true },
+          };
+          state.messages.push(assistant);
+
+          renderChat();
+          promptEl.value = "";
+          autoGrow();
+          await loadChats();
+
+          // Do not block the chat UI while research runs.
+           (async () => {
+             let traceOffset = 0;
+             let lastProgress = "";
+
+             const budgetSec = Number(result.time_budget_sec || 0);
+              // Default: ~15 minutes. If the user set a minimum research duration, poll long enough
+              // to cover it plus a wrap-up window, with a safety cap so we don't keep a tab busy forever.
+              const maxPollSec = budgetSec > 0 ? Math.min(Math.max(900, Math.ceil(budgetSec + 600)), 7200) : 900;
+
+             for (let i = 0; i < maxPollSec; i++) {
+               await new Promise(r => setTimeout(r, 1000));
+               try {
+                 const run = await api(`/api/research/${runId}`);
+                 const status = run?.run?.status || "running";
+                 const err = run?.run?.error || "";
+                 const finalAnswer = run?.run?.final_answer || "";
+
+                const tr = await api(`/api/research/${runId}/trace?limit=200&offset=${traceOffset}`);
+                const trace = tr.trace || [];
+                if (trace.length) traceOffset += trace.length;
+
+                const steps = trace.map(t => t.step).filter(Boolean);
+                const progress = steps.length ? steps[steps.length - 1] : "running";
+                if (progress && progress !== lastProgress) {
+                  lastProgress = progress;
+                  assistant.content = `Run (${modeHint}): ${runId}\n\nStatus: ${status}\nLast step: ${progress}`;
+                  renderChat();
+                }
+
+                if (status === "done") {
+                  const answerText = String(finalAnswer || "").trim() || "(no answer)";
+                  // Replace transient bubble content in UI.
+                  assistant.content = `Run (${modeHint}): ${runId}\n\n${answerText}`;
+                  assistant.meta = { ...(assistant.meta || {}), transient: false };
+                  renderChat();
+
+                  // Persist final answer as a normal assistant message.
+                  await appendToChat("assistant", assistant.content, { slash: true, research: true, run_id: runId });
+                  await loadChats();
+                  return;
+                }
+                if (status === "error") {
+                  assistant.content = `Run (${modeHint}): ${runId}\n\nError: ${err || "(unknown error)"}`;
+                  assistant.meta = { ...(assistant.meta || {}), transient: false, error: true };
+                  renderChat();
+                  await appendToChat("assistant", assistant.content, { slash: true, research: true, run_id: runId, error: true });
+                  await loadChats();
+                  return;
+                }
+              } catch {
+                // ignore transient polling failures
+              }
+            }
+          })();
+
+          return;
+        }
+
+        // Default slash response: persist assistant output immediately.
+        const assistant = { id: null, role: "assistant", content: result.text, ts: nowTs(), model: "system", meta: { slash: true } };
         state.messages.push(assistant);
         await appendToChat("assistant", assistant.content, assistant.meta);
 
@@ -1826,11 +2378,11 @@ async function send() {
       }
     } catch (e) {
       const err = `Command failed: ${e}`;
-      const userMsg = { id: null, role: "user", content: text, ts: nowTs(), __new: true };
+      const userMsg = { id: null, role: "user", content: text, ts: nowTs() };
       state.messages.push(userMsg);
       await appendToChat("user", text);
 
-      const assistant = { id: null, role: "assistant", content: err, ts: nowTs(), model: "system", meta: { slash: true, error: true }, __new: true };
+      const assistant = { id: null, role: "assistant", content: err, ts: nowTs(), model: "system", meta: { slash: true, error: true } };
       state.messages.push(assistant);
       await appendToChat("assistant", assistant.content, assistant.meta);
 
@@ -1839,25 +2391,22 @@ async function send() {
       autoGrow();
       return;
     } finally {
+      // Only block UI while executing the slash command itself.
       setGenerating(false);
     }
   }
 
   lastSources = [];
 
-  const userMsg = { id: null, role: "user", content: text, ts: nowTs(), __new: true };
+  const userMsg = { id: null, role: "user", content: text, ts: nowTs() };
   state.messages.push(userMsg);
   await appendToChat("user", text);
 
-  const assistant = { id: null, role: "assistant", content: "", ts: nowTs(), model: state.model, meta: null, __new: true };
+  const assistant = { id: null, role: "assistant", content: "", ts: nowTs(), model: state.model, meta: null };
   state.messages.push(assistant);
 
   saveState();
   renderChat();
-
-  // mark the last assistant bubble as generating (CSS uses .generating .bubble::after)
-  const genWrap = chatEl.lastElementChild;
-  genWrap?.classList.add("generating");
   promptEl.value = "";
   autoGrow();
 
@@ -1941,17 +2490,6 @@ async function send() {
     const decoder = new TextDecoder();
     let buf = "";
 
-    let raf = 0;
-    const scheduleLivePaint = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        if (liveBody) liveBody.textContent = assistant.content;
-        if (isNearBottom()) scrollToBottom();
-        else showScrollHint(true);
-      });
-    };
-
     const handleLine = (line) => {
       if (!line) return;
       let data;
@@ -2018,7 +2556,11 @@ async function send() {
       const chunk = data?.message?.content ?? data?.response ?? "";
       if (chunk) {
         assistant.content += chunk;
-        scheduleLivePaint();
+        if (liveBody) {
+          liveBody.textContent = assistant.content;
+          if (isNearBottom()) scrollToBottom();
+          else showScrollHint(true);
+        }
       }
       if (data?.error) assistant.content += `\n\n[error] ${data.error}`;
     };
@@ -2079,7 +2621,6 @@ async function send() {
   } finally {
     setGenerating(false);
     abortCtl = null;
-    chatEl.lastElementChild?.classList.remove("generating");
     renderChat();
     if (prevStatusText) setStatus(true, prevStatusText);
   }
@@ -2256,7 +2797,18 @@ async function exportChat(format) {
 
   await ensureChatSelected();
   await loadChats();
-  await selectChat(currentChatId); // loads prefs too
+  try {
+    await selectChat(currentChatId); // loads prefs too
+  } catch (e) {
+    const msg = String(e?.message || e || "");
+    if (msg.includes("chat not found") || msg.includes("HTTP 404")) {
+      currentChatId = null;
+      localStorage.removeItem("currentChatId");
+      await ensureChatSelected();
+    } else {
+      throw e;
+    }
+  }
   await loadDocs();
   renderChat();
   closeSidebar();
@@ -2291,10 +2843,10 @@ async function exportChat(format) {
   // Load slash commands and initialize command palette
   loadSlashCommands();
 
-  initAmbientBubbles();
-  installRipples();
-  updateTopbarScrolled();
-
   initSettingsTabs();
-  loadUIState();
+  const _s = loadUIState();
+  syncSourcesFromUiToControls(_s);
+
+  initRouter();
 })();
+btnHelp?.addEventListener("click", ()=> navigate("help"));
