@@ -7,7 +7,6 @@ This repo uses a workspace layout with multiple Python packages developed togeth
 ## What's In Here
 
 - `packages/contextharbor`: FastAPI backend + web UI + tests
-- `packages/contextharbor`: FastAPI backend + web UI + tests
 - `packages/ollama_cli`: `ollama-cli` library + CLI (shared clients/tools used by ContextHarbor)
 - `scripts/`: helper scripts (env wizard, doctor, etc.)
 
@@ -145,7 +144,12 @@ The UI will let you search and ingest from Settings -> Sources and the Library p
 Web search is controlled by `search.toml`:
 
 - Set `[search].enabled = false` to disable entirely
-- Provider is `[search].provider = "ddg"` (single supported provider for v1.0)
+- Providers:
+  - `ddg` (DuckDuckGo HTML, default)
+  - `searxng` (JSON via your own SearxNG instance)
+  - `auto` (use `searxng` when `searxng_url` is set, else `ddg`)
+
+To use SearxNG, set `[search].searxng_url` (or env `SEARXNG_URL`).
 
 ## Doctor / Sanity Checks
 

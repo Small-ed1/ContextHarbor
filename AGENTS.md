@@ -4,6 +4,7 @@ This guide is for agentic coding assistants working in this repository.
 
 Notes
 - Prefer small, focused changes that match existing patterns.
+- Assume the repo may be in a dirty git state; avoid unrelated refactors.
 
 Cursor/Copilot Rules
 - No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` found.
@@ -13,12 +14,10 @@ Cursor/Copilot Rules
 Recommended setup
 ```bash
 python -m venv .venv
-
 # Activate the venv
 # - Windows (PowerShell): .venv\\Scripts\\Activate.ps1
 # - Windows (cmd.exe):   .venv\\Scripts\\activate.bat
 # - macOS/Linux:         source .venv/bin/activate
-
 python -m pip install -U pip
 python -m pip install -e "packages/ollama_cli[dev]" -e "packages/contextharbor[dev]"
 ```
@@ -39,29 +38,31 @@ Run server + UI
 ```bash
 # FastAPI (dev)
 uvicorn contextharbor.app:app --reload --host 0.0.0.0 --port 8000
-
-
 # Terminal UI
 contextharbor-tui
-
-
 # CLI
 contextharbor --help
+```
+
+Build distributions
+```bash
+# build wheels/sdist (per package)
+python -m build packages/contextharbor
+python -m build packages/ollama_cli
 ```
 
 Tests
 ```bash
 # all tests
 python -m pytest -q
-
 # one file
 python -m pytest packages/contextharbor/tests/test_context_builder.py -q
-
 # single test
 python -m pytest packages/contextharbor/tests/test_context_builder.py::test_build_context_caps_and_dedupe -q
-
 # filter by substring
 python -m pytest -k "context_builder or tool_runtime" -q
+# one test in ollama_cli
+python -m pytest packages/ollama_cli/tests/test_tool_contract.py::test_parse_tool_calls -q
 ```
 
 Type checking / sanity checks
@@ -70,6 +71,12 @@ Type checking / sanity checks
 python -m mypy packages/contextharbor/src/contextharbor --ignore-missing-imports
 python -m mypy packages/ollama_cli/src/ollama_cli --ignore-missing-imports
 ```
+
+Linting
+- No repo-wide linter is enforced.
+- `modules/agents/ollama_tools_agent` has a `ruff` config; if you touch that module:
+  - `python -m pip install -e "modules/agents/ollama_tools_agent[dev]"`
+  - `python -m ruff check modules/agents/ollama_tools_agent`
 
 ## Code Style Guidelines
 
@@ -80,6 +87,7 @@ Imports
 - Use `from __future__ import annotations` at the top of modules with type hints.
 - Group imports: stdlib, third-party, local; separate groups with a blank line.
 - Prefer package-absolute imports within `contextharbor` (e.g., `from contextharbor.services.chat import stream_chat`).
+- Avoid importing from tests into production code.
 
 Formatting
 - 4-space indent, no tabs; keep functions small and readable.
@@ -100,6 +108,7 @@ Error handling
 - Validate inputs early; raise `ValueError` for bad user input in pure functions/services.
 - In FastAPI handlers, translate expected failures into `HTTPException` with correct status codes.
 - Catch broad exceptions only at boundaries (API/tool execution), and return structured errors.
+- Prefer returning explicit `{ok: false, error: {code, message}}` shapes from tool handlers.
 
 Pydantic models
 - Use request/response `BaseModel` schemas for API boundaries.
@@ -109,6 +118,7 @@ Pydantic models
 Async + networking
 - Use explicit timeouts for outbound calls; avoid unbounded concurrency.
 - Use `asyncio.Lock()` when sharing mutable process-wide state.
+- Prefer `httpx.AsyncClient` reuse (inject or share) over per-call clients where practical.
 
 SQLite patterns
 - Use context managers for connections/transactions; keep queries parameterized.
@@ -118,10 +128,13 @@ Security + safety
 - Treat URLs/hosts as untrusted: apply allow/block host lists to mitigate SSRF.
 - Sanitize filenames on upload and enforce size caps (`MAX_UPLOAD_BYTES`).
 - Keep tool outputs bounded (truncate + hash for logs).
+- Side-effecting tools must require explicit confirmation tokens.
 
 Configuration
 - Runtime config lives in `packages/contextharbor/src/contextharbor/config.py`.
-- Common env vars: `OLLAMA_URL`, `DEFAULT_CHAT_MODEL`, `EMBED_MODEL`, `KIWIX_URL`, `KIWIX_ZIM_DIR`, `EBOOKS_DIR`.
+- Config dir env var: `CONTEXTHARBOR_CONFIG_DIR`.
+- Common env vars (back-compat / convenience): `OLLAMA_URL`, `KIWIX_URL`, `KIWIX_ZIM_DIR`, `EBOOKS_DIR`.
+- Default config path: `~/.config/contextharbor/` (creates `core.toml`, `tools.toml`, `search.toml`).
 
 Tool calling system (if touching tools)
 - Contract types are in `packages/contextharbor/src/contextharbor/tools/contract.py` (`tool_request` / `final`).
@@ -132,3 +145,4 @@ Where to look
 - API entrypoint: `packages/contextharbor/src/contextharbor/app.py`.
 - Tool runtime: `packages/contextharbor/src/contextharbor/tools/registry.py`, `packages/contextharbor/src/contextharbor/tools/executor.py`.
 - Stores (SQLite): `packages/contextharbor/src/contextharbor/stores/`.
+- Web UI assets: `packages/contextharbor/web/static/` and `packages/contextharbor/src/contextharbor/static/`.
