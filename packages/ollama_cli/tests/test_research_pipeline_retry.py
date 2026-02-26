@@ -67,10 +67,14 @@ def test_synthesis_retry_reduces_packet(monkeypatch: Any) -> None:
     monkeypatch.setattr(research_pipeline, "KiwixTools", _FakeKiwixTools)
 
     # Skip real planning.
-    def fake_plan_queries(*args: Any, **kwargs: Any) -> Tuple[List[str], List[str]]:
-        return (["Example Topic."], [])
+    def fake_plan_research(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return {
+            "topics": ["Example Topic"],
+            "search_queries": ["Example Topic"],
+            "subquestions": [],
+        }
 
-    monkeypatch.setattr(research_pipeline, "plan_queries", fake_plan_queries)
+    monkeypatch.setattr(research_pipeline, "plan_research", fake_plan_research)
 
     packets: List[Dict[str, Any]] = []
 
@@ -113,7 +117,11 @@ def test_synthesis_failure_returns_digest_with_errors(monkeypatch: Any) -> None:
     monkeypatch.setattr(research_pipeline, "WebTools", _FakeWebTools)
     monkeypatch.setattr(research_pipeline, "KiwixTools", _FakeKiwixTools)
 
-    monkeypatch.setattr(research_pipeline, "plan_queries", lambda *a, **k: (["Example topic"], []))
+    monkeypatch.setattr(
+        research_pipeline,
+        "plan_research",
+        lambda *a, **k: {"topics": [], "search_queries": ["Example topic"], "subquestions": []},
+    )
 
     def always_fail(client: Any, model: str, messages: List[Dict[str, Any]], options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         raise TimeoutError("boom")
