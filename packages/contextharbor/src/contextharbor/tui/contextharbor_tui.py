@@ -306,7 +306,7 @@ class MainScreen(Screen):
                 },
                 "keep_alive": "5m",
                 "rag": {
-                    "enabled": False,
+                    "enabled": True,
                     "top_k": 6,
                     "doc_ids": None,
                     "use_mmr": False,

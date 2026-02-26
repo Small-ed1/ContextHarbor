@@ -3,17 +3,102 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from typing import AsyncGenerator
 
 import httpx
 
 from .context import build_context, rag_system_prompt
 from .models import ModelRegistry
-from .retrieval import DocRetrievalProvider, KiwixRetrievalProvider, WebRetrievalProvider, RetrievalResult
+from .retrieval import (
+    DocRetrievalProvider,
+    KiwixRetrievalProvider,
+    WebRetrievalProvider,
+    RetrievalResult,
+)
 from .rag_routing import route_rag
 from .rerank import rerank_results
 from .web_ingest import WebIngestQueue
 from .hybrid_router import smart_chat, get_router
+from .evidence import (
+    extract_citation_tags,
+    infer_epub_intent,
+    user_requested_references,
+)
+
+
+_NUMERIC_CITATION_TOKEN = re.compile(r"\[(\d{1,4})\]")
+_REFS_HEADING = re.compile(
+    r"(?im)^\s*(references|bibliography|works\s+cited|sources)\s*:?[ \t]*$"
+)
+_BIB_LINE = re.compile(r"^\s*\[(\d{1,4})\]\s+\S")
+
+
+def _strip_forbidden_citations(text: str, *, allow_reference_section: bool) -> str:
+    s = text or ""
+
+    if not allow_reference_section:
+        # If the model adds a references block, drop it.
+        # Be code-fence aware so we don't truncate examples.
+        lines = s.splitlines()
+        cut_at: int | None = None
+        in_code = False
+        for i, ln in enumerate(lines):
+            stripped = (ln or "").strip()
+            if stripped.startswith("```"):
+                in_code = not in_code
+                continue
+            if in_code:
+                continue
+            if _REFS_HEADING.match(ln or ""):
+                cut_at = i
+                break
+        if cut_at is not None:
+            s = "\n".join(lines[:cut_at]).rstrip()
+
+    # Normalize spacing.
+    s = re.sub(r"[ \t]{2,}", " ", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+
+def _has_forbidden_citations(text: str, *, allow_reference_section: bool) -> bool:
+    if not text or allow_reference_section:
+        return False
+
+    lines = (text or "").splitlines()
+    in_code = False
+    for ln in lines:
+        stripped = (ln or "").strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        if _REFS_HEADING.match(ln or ""):
+            return True
+
+    # Treat an unlabeled bibliography tail as forbidden (more conservative than stripping all [1]).
+    bib_lines = 0
+    for ln in lines[-80:]:
+        stripped = (ln or "").strip()
+        if not stripped:
+            continue
+        if stripped.startswith("```"):
+            break
+        if _BIB_LINE.match(ln or ""):
+            bib_lines += 1
+            if bib_lines >= 2:
+                return True
+
+    return False
+
+
+def _has_invalid_letter_citations(text: str, *, allowed: set[str]) -> bool:
+    used = extract_citation_tags(text or "")
+    if not used:
+        return False
+    return any(t not in allowed for t in used)
 
 
 def _validate_messages(msgs: list[dict]) -> list[dict]:
@@ -108,7 +193,9 @@ async def stream_chat(
 
     if rag.get("enabled"):
         yield json.dumps({"type": "status", "stage": "calling_tools"}) + "\n"
-        last_user = next((m for m in reversed(clean_messages) if m["role"] == "user"), None)
+        last_user = next(
+            (m for m in reversed(clean_messages) if m["role"] == "user"), None
+        )
         query = (last_user or {}).get("content", "")
         rag_embed_model = rag.get("embed_model") or embed_model
 
@@ -176,41 +263,110 @@ async def stream_chat(
         results: list[RetrievalResult] = []
         if use_docs:
             doc_provider = DocRetrievalProvider()
-            results.extend(
-                await doc_provider.retrieve(
-                    doc_query,
-                    top_k=doc_top_k,
-                    doc_ids=doc_ids,
-                    group_name=doc_group,
-                    source=doc_source,
-                    embed_model=rag_embed_model,
-                    use_mmr=use_mmr,
-                    mmr_lambda=mmr_lambda,
-                )
+
+            # Safety default: keep the general EPUB library out of RAG unless explicitly requested.
+            epub_intent = infer_epub_intent(query)
+            allow_epub = (
+                bool(rag.get("allow_epub"))
+                or str(doc_group or "").strip().lower() == "epub"
+                or epub_intent in {"fiction", "reference"}
             )
+            exclude_group_names = rag.get("exclude_group_names")
+            if not isinstance(exclude_group_names, list):
+                exclude_group_names = []
+            exclude_group_names = [
+                str(x).strip() for x in exclude_group_names if str(x).strip()
+            ]
+            if allow_epub:
+                exclude_group_names = [
+                    x for x in exclude_group_names if x.strip().lower() != "epub"
+                ]
+            elif "epub" not in {x.lower() for x in exclude_group_names}:
+                exclude_group_names.append("epub")
+
+            include_tags = None
+            exclude_tags = None
+            if epub_intent == "reference":
+                # Default to reference/non-fiction EPUBs when the user is asking for citations.
+                exclude_tags = ["fiction"]
+
+            try:
+                results.extend(
+                    await doc_provider.retrieve(
+                        doc_query,
+                        top_k=doc_top_k,
+                        doc_ids=doc_ids,
+                        group_name=doc_group,
+                        source=doc_source,
+                        exclude_group_names=exclude_group_names,
+                        include_tags=include_tags,
+                        exclude_tags=exclude_tags,
+                        embed_model=rag_embed_model,
+                        use_mmr=use_mmr,
+                        mmr_lambda=mmr_lambda,
+                    )
+                )
+            except Exception as exc:
+                yield (
+                    json.dumps(
+                        {
+                            "type": "status",
+                            "stage": "rag_retrieve_error",
+                            "provider": "docs",
+                            "error": str(exc)[:500],
+                        }
+                    )
+                    + "\n"
+                )
 
         if use_web:
             web_provider = WebRetrievalProvider()
-            results.extend(
-                await web_provider.retrieve(
-                    web_query,
-                    top_k=web_top_k,
-                    embed_model=rag_embed_model,
-                    domain_whitelist=domain_whitelist,
+            try:
+                results.extend(
+                    await web_provider.retrieve(
+                        web_query,
+                        top_k=web_top_k,
+                        embed_model=rag_embed_model,
+                        domain_whitelist=domain_whitelist,
+                    )
                 )
-            )
+            except Exception as exc:
+                yield (
+                    json.dumps(
+                        {
+                            "type": "status",
+                            "stage": "rag_retrieve_error",
+                            "provider": "web",
+                            "error": str(exc)[:500],
+                        }
+                    )
+                    + "\n"
+                )
 
         if use_kiwix and kiwix_url:
             kiwix_provider = KiwixRetrievalProvider(kiwix_url)
-            results.extend(
-                await kiwix_provider.retrieve(
-                    kiwix_query,
-                    top_k=kiwix_top_k,
-                    embed_model=rag_embed_model,
-                    persist=bool(rag.get("kiwix_persist", True)),
-                    pages=int(rag.get("kiwix_pages") or 4),
+            try:
+                results.extend(
+                    await kiwix_provider.retrieve(
+                        kiwix_query,
+                        top_k=kiwix_top_k,
+                        embed_model=rag_embed_model,
+                        persist=bool(rag.get("kiwix_persist", True)),
+                        pages=int(rag.get("kiwix_pages") or 4),
+                    )
                 )
-            )
+            except Exception as exc:
+                yield (
+                    json.dumps(
+                        {
+                            "type": "status",
+                            "stage": "rag_retrieve_error",
+                            "provider": "kiwix",
+                            "error": str(exc)[:500],
+                        }
+                    )
+                    + "\n"
+                )
 
         per_source_cap = int(rag.get("per_source_cap") or 6)
         max_context_chars = int(rag.get("max_context_chars") or 8000)
@@ -218,24 +374,42 @@ async def stream_chat(
             max_context_chars = 16000
 
         if bool(rag.get("rerank")) and results:
-            rr_model = str(rag.get("rerank_model") or os.getenv("RAG_RERANK_MODEL") or model)
-            keep_n = int(rag.get("rerank_keep_n") or 24)
-            results = await rerank_results(
-                http=http,
-                ollama_url=ollama_url,
-                model=rr_model,
-                query=query,
-                results=results,
-                keep_n=keep_n,
+            rr_model = str(
+                rag.get("rerank_model") or os.getenv("RAG_RERANK_MODEL") or model
             )
+            keep_n = int(rag.get("rerank_keep_n") or 24)
+            try:
+                results = await rerank_results(
+                    http=http,
+                    ollama_url=ollama_url,
+                    model=rr_model,
+                    query=query,
+                    results=results,
+                    keep_n=keep_n,
+                )
+            except Exception as exc:
+                yield (
+                    json.dumps(
+                        {
+                            "type": "status",
+                            "stage": "rag_rerank_error",
+                            "error": str(exc)[:500],
+                        }
+                    )
+                    + "\n"
+                )
 
-        sources_meta, context_lines = build_context(
-            results,
-            max_chars=max_context_chars,
-            per_source_cap=per_source_cap,
-        )
-        system = rag_system_prompt(context_lines)
-        clean_messages = [{"role": "system", "content": system}] + clean_messages
+        sources_meta = []
+        context_lines: list[str] = []
+        if results:
+            sources_meta, context_lines = build_context(
+                results,
+                max_chars=max_context_chars,
+                per_source_cap=per_source_cap,
+            )
+        if context_lines:
+            system = rag_system_prompt(context_lines)
+            clean_messages = [{"role": "system", "content": system}] + clean_messages
         yield json.dumps({"type": "sources", "sources": sources_meta}) + "\n"
 
     q: asyncio.Queue[str | None] = asyncio.Queue()
@@ -256,8 +430,11 @@ async def stream_chat(
             tools_for_prompt = tool_registry.list_for_prompt()
 
             # Extract user message for tool contract
-            last_user = next((m for m in reversed(clean_messages) if m["role"] == "user"), None)
+            last_user = next(
+                (m for m in reversed(clean_messages) if m["role"] == "user"), None
+            )
             user_text = (last_user or {}).get("content", "")
+            allow_reference_section = user_requested_references(user_text)
 
             content = await chat_with_tool_contract(
                 http=http,
@@ -311,7 +488,13 @@ async def stream_chat(
                 require = bool(rag.get("require_citations", True))
                 retry = bool(rag.get("citation_retry", True))
                 allowed = _allowed_citations(sources_meta)
-                if require and allowed and content and not _has_any_citation(content, allowed) and retry:
+                if (
+                    require
+                    and allowed
+                    and content
+                    and not _has_any_citation(content, allowed)
+                    and retry
+                ):
                     retry_timeout = float(rag.get("citation_retry_timeout_sec") or 20.0)
                     allowed_list = ", ".join([f"[{t}]" for t in sorted(allowed)])
                     instruction = (
@@ -326,7 +509,8 @@ async def stream_chat(
                         http=http,
                         ollama_url=ollama_url,
                         model=answer_model,
-                        messages=clean_messages + [
+                        messages=clean_messages
+                        + [
                             {"role": "assistant", "content": content},
                             {"role": "user", "content": instruction},
                         ],
@@ -334,6 +518,92 @@ async def stream_chat(
                         keep_alive=keep_alive,
                         timeout=retry_timeout,
                     )
+
+            # Hard guardrail: never allow fake citation formats (e.g. [1] references).
+            # If RAG is enabled, also disallow citation tags outside the allowed set.
+            allowed = _allowed_citations(sources_meta) if sources_meta else set()
+            needs_fix = bool(content) and (
+                _has_forbidden_citations(
+                    content, allow_reference_section=allow_reference_section
+                )
+                or (
+                    bool(rag.get("enabled"))
+                    and bool(allowed)
+                    and _has_invalid_letter_citations(content, allowed=allowed)
+                )
+            )
+            if needs_fix:
+                if rag.get("enabled") and allowed:
+                    allowed_list = ", ".join([f"[{t}]" for t in sorted(allowed)])
+                    if allow_reference_section:
+                        instruction = (
+                            "Rewrite your answer to remove ANY invented citations.\n"
+                            f"If you use citations, use ONLY these inline tags: {allowed_list}.\n"
+                            "Rules:\n"
+                            "- Do not invent sources or claims beyond the provided context.\n"
+                            "- If you include a References/Sources section, only list sources that appear in the provided context.\n"
+                            "Return the rewritten answer only."
+                        )
+                    else:
+                        instruction = (
+                            "Rewrite your answer to remove ANY invented citations (including [1] style tokens and reference lists).\n"
+                            f"If you use citations, use ONLY these inline tags: {allowed_list}.\n"
+                            "Rules:\n"
+                            "- Do NOT add a Sources/References section.\n"
+                            "- Remove any statement that cannot be supported by the provided context.\n"
+                            "Return the rewritten answer only."
+                        )
+                    content = await _ollama_chat_once(
+                        http=http,
+                        ollama_url=ollama_url,
+                        model=answer_model,
+                        messages=clean_messages
+                        + [
+                            {"role": "assistant", "content": content},
+                            {"role": "user", "content": instruction},
+                        ],
+                        options=options,
+                        keep_alive=keep_alive,
+                        timeout=float(rag.get("citation_retry_timeout_sec") or 20.0),
+                    )
+                else:
+                    # No RAG context: forbid invented references entirely.
+                    if allow_reference_section:
+                        instruction = (
+                            "Rewrite your answer to avoid ANY invented citations.\n"
+                            "Rules:\n"
+                            "- If you cannot cite concrete sources provided by the user, do not fabricate them.\n"
+                            "- If you include a References/Sources section, keep it high-level (what to look for), not specific papers/URLs.\n"
+                            "- Keep the answer as general guidance; if you are unsure, say so.\n"
+                            "Return the rewritten answer only."
+                        )
+                    else:
+                        instruction = (
+                            "Rewrite your answer to remove any citations and reference lists.\n"
+                            "Rules:\n"
+                            "- Do NOT claim that studies/journals/papers support the answer unless those sources were explicitly provided in the chat context.\n"
+                            "- Keep the answer as general guidance; if you are unsure, say so.\n"
+                            "Return the rewritten answer only."
+                        )
+                    content = await _ollama_chat_once(
+                        http=http,
+                        ollama_url=ollama_url,
+                        model=answer_model,
+                        messages=clean_messages
+                        + [
+                            {"role": "assistant", "content": content},
+                            {"role": "user", "content": instruction},
+                        ],
+                        options=options,
+                        keep_alive=keep_alive,
+                        timeout=20.0,
+                    )
+
+            if content:
+                # Last-resort scrubber (in case the model ignores instructions).
+                content = _strip_forbidden_citations(
+                    content, allow_reference_section=allow_reference_section
+                )
 
             if content:
                 await q.put(json.dumps({"message": {"content": content}}) + "\n")

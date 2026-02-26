@@ -9,8 +9,10 @@ CHAT_DB = os.path.abspath(os.getenv("CHAT_DB", config.config.chat_db))
 
 VALID_ROLES = {"system", "user", "assistant"}
 
+
 def _now() -> int:
     return int(time.time())
+
 
 def _conn():
     con = sqlite3.connect(CHAT_DB, timeout=10, check_same_thread=False)
@@ -23,6 +25,7 @@ def _conn():
     con.execute("PRAGMA cache_size=-20000;")
     return con
 
+
 @contextmanager
 def _db():
     con = _conn()
@@ -32,39 +35,51 @@ def _db():
     finally:
         con.close()
 
+
 def _get_user_version(con: sqlite3.Connection) -> int:
     return int(con.execute("PRAGMA user_version;").fetchone()[0] or 0)
 
+
 def _set_user_version(con: sqlite3.Connection, v: int):
     con.execute(f"PRAGMA user_version={int(v)};")
+
 
 def init_db():
     with _db() as con:
         v = _get_user_version(con)
         if v < 1:
             _migrate_1_baseline(con)
-            _set_user_version(con, 1); v = 1
+            _set_user_version(con, 1)
+            v = 1
         if v < 2:
             _migrate_2_last_message_pointer(con)
-            _set_user_version(con, 2); v = 2
+            _set_user_version(con, 2)
+            v = 2
         if v < 3:
             _migrate_3_fts(con)
-            _set_user_version(con, 3); v = 3
+            _set_user_version(con, 3)
+            v = 3
         if v < 4:
             _migrate_4_prefs_and_forks(con)
-            _set_user_version(con, 4); v = 4
+            _set_user_version(con, 4)
+            v = 4
         if v < 5:
             _migrate_5_tags_and_settings(con)
-            _set_user_version(con, 5); v = 5
+            _set_user_version(con, 5)
+            v = 5
         if v < 6:
             _migrate_6_autosummary(con)
-            _set_user_version(con, 6); v = 6
+            _set_user_version(con, 6)
+            v = 6
         if v < 7:
             _migrate_7_token_count(con)
-            _set_user_version(con, 7); v = 7
+            _set_user_version(con, 7)
+            v = 7
         if v < 8:
             _migrate_8_message_status(con)
-            _set_user_version(con, 8); v = 8
+            _set_user_version(con, 8)
+            v = 8
+
 
 def _migrate_1_baseline(con: sqlite3.Connection):
     con.execute("""
@@ -89,9 +104,14 @@ def _migrate_1_baseline(con: sqlite3.Connection):
       FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
     );
     """)
-    con.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_time ON messages(chat_id, created_at, id);")
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_chat_time ON messages(chat_id, created_at, id);"
+    )
     con.execute("CREATE INDEX IF NOT EXISTS idx_chats_updated ON chats(updated_at);")
-    con.execute("CREATE INDEX IF NOT EXISTS idx_chats_arch_pin_upd ON chats(archived, pinned, updated_at);")
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chats_arch_pin_upd ON chats(archived, pinned, updated_at);"
+    )
+
 
 def _migrate_2_last_message_pointer(con: sqlite3.Connection):
     cols = {r["name"] for r in con.execute("PRAGMA table_info(chats);").fetchall()}
@@ -109,7 +129,10 @@ def _migrate_2_last_message_pointer(con: sqlite3.Connection):
        )
      WHERE last_message_id IS NULL;
     """)
-    con.execute("CREATE INDEX IF NOT EXISTS idx_chats_lastmsg ON chats(last_message_id);")
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chats_lastmsg ON chats(last_message_id);"
+    )
+
 
 def _migrate_3_fts(con: sqlite3.Connection):
     con.execute("""
@@ -158,11 +181,14 @@ def _migrate_3_fts(con: sqlite3.Connection):
      WHERE m.id NOT IN (SELECT rowid FROM messages_fts);
     """)
 
+
 def _migrate_4_prefs_and_forks(con: sqlite3.Connection):
     cols = {r["name"] for r in con.execute("PRAGMA table_info(chats);").fetchall()}
     if "parent_chat_id" not in cols:
         con.execute("ALTER TABLE chats ADD COLUMN parent_chat_id TEXT;")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_chats_parent ON chats(parent_chat_id);")
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chats_parent ON chats(parent_chat_id);"
+        )
 
     con.execute("""
     CREATE TABLE IF NOT EXISTS chat_prefs (
@@ -173,6 +199,7 @@ def _migrate_4_prefs_and_forks(con: sqlite3.Connection):
       FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
     );
     """)
+
 
 def _migrate_5_tags_and_settings(con: sqlite3.Connection):
     con.execute("""
@@ -200,28 +227,41 @@ def _migrate_5_tags_and_settings(con: sqlite3.Connection):
     );
     """)
 
+
 def _migrate_7_token_count(con: sqlite3.Connection):
     cols = {r["name"] for r in con.execute("PRAGMA table_info(messages);").fetchall()}
     if "token_count" not in cols:
         con.execute("ALTER TABLE messages ADD COLUMN token_count INTEGER DEFAULT 0;")
+
 
 def _migrate_8_message_status(con: sqlite3.Connection):
     cols = {r["name"] for r in con.execute("PRAGMA table_info(messages);").fetchall()}
     if "status" not in cols:
         con.execute("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'final';")
 
+
 def _migrate_6_autosummary(con: sqlite3.Connection):
-    cols = {r["name"] for r in con.execute("PRAGMA table_info(chat_settings);").fetchall()}
+    cols = {
+        r["name"] for r in con.execute("PRAGMA table_info(chat_settings);").fetchall()
+    }
     if "autosummary_enabled" not in cols:
-        con.execute("ALTER TABLE chat_settings ADD COLUMN autosummary_enabled INTEGER NOT NULL DEFAULT 0;")
+        con.execute(
+            "ALTER TABLE chat_settings ADD COLUMN autosummary_enabled INTEGER NOT NULL DEFAULT 0;"
+        )
     if "autosummary_every" not in cols:
-        con.execute("ALTER TABLE chat_settings ADD COLUMN autosummary_every INTEGER NOT NULL DEFAULT 12;")
+        con.execute(
+            "ALTER TABLE chat_settings ADD COLUMN autosummary_every INTEGER NOT NULL DEFAULT 12;"
+        )
     if "autosummary_last_msg_id" not in cols:
-        con.execute("ALTER TABLE chat_settings ADD COLUMN autosummary_last_msg_id INTEGER;")
+        con.execute(
+            "ALTER TABLE chat_settings ADD COLUMN autosummary_last_msg_id INTEGER;"
+        )
+
 
 def _normalize_title(title: str) -> str:
     t = (title or "").strip()
-    return (t[:200] if t else "New Chat")
+    return t[:200] if t else "New Chat"
+
 
 def _normalize_meta(meta: Any) -> Optional[str]:
     if meta is None:
@@ -233,10 +273,17 @@ def _normalize_meta(meta: Any) -> Optional[str]:
     except Exception:
         return json.dumps({"meta": str(meta)}, ensure_ascii=False)
 
-def create_chat(title: str = "New Chat", parent_chat_id: Optional[str] = None) -> dict[str, Any]:
+
+def create_chat(
+    title: str = "New Chat",
+    parent_chat_id: Optional[str] = None,
+    *,
+    rag_enabled: Optional[bool] = None,
+) -> dict[str, Any]:
     chat_id = str(uuid.uuid4())
     ts = _now()
     title = _normalize_title(title)
+    rag_val = 1 if bool(rag_enabled) else 0
 
     with _db() as con:
         con.execute(
@@ -244,25 +291,44 @@ def create_chat(title: str = "New Chat", parent_chat_id: Optional[str] = None) -
             (chat_id, title, ts, ts, parent_chat_id),
         )
         con.execute(
-            "INSERT OR IGNORE INTO chat_prefs(chat_id, rag_enabled, doc_ids_json, updated_at) VALUES(?,0,NULL,?)",
-            (chat_id, ts),
+            "INSERT OR IGNORE INTO chat_prefs(chat_id, rag_enabled, doc_ids_json, updated_at) VALUES(?,?,NULL,?)",
+            (chat_id, rag_val, ts),
         )
         con.execute(
             "INSERT OR IGNORE INTO chat_settings(chat_id, updated_at) VALUES(?,?)",
             (chat_id, ts),
         )
 
-    return {"id": chat_id, "title": title, "created_at": ts, "updated_at": ts, "archived": 0, "pinned": 0, "last_message_id": None, "parent_chat_id": parent_chat_id}
+    return {
+        "id": chat_id,
+        "title": title,
+        "created_at": ts,
+        "updated_at": ts,
+        "archived": 0,
+        "pinned": 0,
+        "last_message_id": None,
+        "parent_chat_id": parent_chat_id,
+    }
+
 
 # --- FTS sanitizing (prevents MATCH errors) ---
 _word = re.compile(r"[A-Za-z0-9_]{2,}")
+
+
 def _fts_safe_query(q: str) -> str:
     toks = _word.findall((q or "").lower())
     if not toks:
         return ""
     return " OR ".join(toks[:24])
 
-def list_chats(include_archived: bool = False, q: Optional[str] = None, tag: Optional[str] = None, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+
+def list_chats(
+    include_archived: bool = False,
+    q: Optional[str] = None,
+    tag: Optional[str] = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     limit = max(1, min(int(limit), 500))
     offset = max(0, int(offset))
     q = (q or "").strip()
@@ -275,7 +341,9 @@ def list_chats(include_archived: bool = False, q: Optional[str] = None, tag: Opt
         where.append("c.archived = 0")
 
     if tag:
-        where.append("EXISTS(SELECT 1 FROM chat_tags t WHERE t.chat_id=c.id AND t.tag=?)")
+        where.append(
+            "EXISTS(SELECT 1 FROM chat_tags t WHERE t.chat_id=c.id AND t.tag=?)"
+        )
         params.append(tag)
 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
@@ -298,27 +366,39 @@ def list_chats(include_archived: bool = False, q: Optional[str] = None, tag: Opt
             return [dict(r) for r in cur.fetchall()]
 
         try:
-            sql = base_sql + """
+            sql = (
+                base_sql
+                + """
               AND (
                 c.title LIKE ?
                 OR c.id IN (SELECT DISTINCT chat_id FROM messages_fts WHERE messages_fts MATCH ?)
               )
-            """ + order_sql
+            """
+                + order_sql
+            )
             cur = con.execute(sql, (*params, f"%{q}%", q, limit, offset))
             return [dict(r) for r in cur.fetchall()]
         except sqlite3.OperationalError:
             safe = _fts_safe_query(q)
             if not safe:
-                cur = con.execute(base_sql + " AND c.title LIKE ? " + order_sql, (*params, f"%{q}%", limit, offset))
+                cur = con.execute(
+                    base_sql + " AND c.title LIKE ? " + order_sql,
+                    (*params, f"%{q}%", limit, offset),
+                )
                 return [dict(r) for r in cur.fetchall()]
-            sql = base_sql + """
+            sql = (
+                base_sql
+                + """
               AND (
                 c.title LIKE ?
                 OR c.id IN (SELECT DISTINCT chat_id FROM messages_fts WHERE messages_fts MATCH ?)
               )
-            """ + order_sql
+            """
+                + order_sql
+            )
             cur = con.execute(sql, (*params, f"%{q}%", safe, limit, offset))
             return [dict(r) for r in cur.fetchall()]
+
 
 def get_chat(chat_id: str, limit: int = 2000, offset: int = 0) -> dict[str, Any]:
     limit = max(1, min(int(limit), 5000))
@@ -329,37 +409,59 @@ def get_chat(chat_id: str, limit: int = 2000, offset: int = 0) -> dict[str, Any]
         if not chat:
             raise KeyError("chat not found")
 
-        cur = con.execute("""
+        cur = con.execute(
+            """
           SELECT id, role, content, created_at, model, meta_json, token_count, status
             FROM messages
            WHERE chat_id=?
            ORDER BY created_at ASC, id ASC
            LIMIT ? OFFSET ?;
-        """, (chat_id, limit, offset))
+        """,
+            (chat_id, limit, offset),
+        )
         msgs = [dict(r) for r in cur.fetchall()]
         return {"chat": dict(chat), "messages": msgs}
+
 
 def rename_chat(chat_id: str, title: str):
     title = _normalize_title(title)
     with _db() as con:
-        con.execute("UPDATE chats SET title=?, updated_at=? WHERE id=?", (title, _now(), chat_id))
+        con.execute(
+            "UPDATE chats SET title=?, updated_at=? WHERE id=?",
+            (title, _now(), chat_id),
+        )
+
 
 def set_archived(chat_id: str, archived: bool):
     with _db() as con:
-        con.execute("UPDATE chats SET archived=?, updated_at=? WHERE id=?", (1 if archived else 0, _now(), chat_id))
+        con.execute(
+            "UPDATE chats SET archived=?, updated_at=? WHERE id=?",
+            (1 if archived else 0, _now(), chat_id),
+        )
+
 
 def set_pinned(chat_id: str, pinned: bool):
     with _db() as con:
-        con.execute("UPDATE chats SET pinned=?, updated_at=? WHERE id=?", (1 if pinned else 0, _now(), chat_id))
+        con.execute(
+            "UPDATE chats SET pinned=?, updated_at=? WHERE id=?",
+            (1 if pinned else 0, _now(), chat_id),
+        )
+
 
 def toggle_archived(chat_id: str) -> dict[str, Any]:
     with _db() as con:
-        row = con.execute("SELECT archived FROM chats WHERE id=?", (chat_id,)).fetchone()
+        row = con.execute(
+            "SELECT archived FROM chats WHERE id=?", (chat_id,)
+        ).fetchone()
         if not row:
             raise KeyError("chat not found")
         newv = 0 if int(row["archived"]) else 1
-        con.execute("UPDATE chats SET archived=?, updated_at=? WHERE id=?", (newv, _now(), chat_id))
+        con.execute(
+            "UPDATE chats SET archived=?, updated_at=? WHERE id=?",
+            (newv, _now(), chat_id),
+        )
         return {"archived": newv}
+
 
 def toggle_pinned(chat_id: str) -> dict[str, Any]:
     with _db() as con:
@@ -367,17 +469,26 @@ def toggle_pinned(chat_id: str) -> dict[str, Any]:
         if not row:
             raise KeyError("chat not found")
         newv = 0 if int(row["pinned"]) else 1
-        con.execute("UPDATE chats SET pinned=?, updated_at=? WHERE id=?", (newv, _now(), chat_id))
+        con.execute(
+            "UPDATE chats SET pinned=?, updated_at=? WHERE id=?",
+            (newv, _now(), chat_id),
+        )
         return {"pinned": newv}
+
 
 def delete_chat(chat_id: str):
     with _db() as con:
         con.execute("DELETE FROM chats WHERE id=?", (chat_id,))
 
+
 def clear_chat(chat_id: str):
     with _db() as con:
         con.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
-        con.execute("UPDATE chats SET last_message_id=NULL, updated_at=? WHERE id=?", (_now(), chat_id))
+        con.execute(
+            "UPDATE chats SET last_message_id=NULL, updated_at=? WHERE id=?",
+            (_now(), chat_id),
+        )
+
 
 def append_messages(chat_id: str, items: list[dict[str, Any]]):
     ts = _now()
@@ -416,34 +527,63 @@ def append_messages(chat_id: str, items: list[dict[str, Any]]):
             return
 
         if row["title"] == "New Chat":
-            first_user = next((it for it in items if it.get("role") == "user" and (it.get("content") or "").strip()), None)
+            first_user = next(
+                (
+                    it
+                    for it in items
+                    if it.get("role") == "user" and (it.get("content") or "").strip()
+                ),
+                None,
+            )
             if first_user:
                 words = first_user["content"].strip().split()
                 new_title = (" ".join(words[:7])[:60]).strip() or "New Chat"
-                con.execute("UPDATE chats SET title=?, updated_at=?, last_message_id=? WHERE id=?", (new_title, ts, last_id, chat_id))
+                con.execute(
+                    "UPDATE chats SET title=?, updated_at=?, last_message_id=? WHERE id=?",
+                    (new_title, ts, last_id, chat_id),
+                )
             else:
-                con.execute("UPDATE chats SET updated_at=?, last_message_id=? WHERE id=?", (ts, last_id, chat_id))
+                con.execute(
+                    "UPDATE chats SET updated_at=?, last_message_id=? WHERE id=?",
+                    (ts, last_id, chat_id),
+                )
         else:
-            con.execute("UPDATE chats SET updated_at=?, last_message_id=? WHERE id=?", (ts, last_id, chat_id))
+            con.execute(
+                "UPDATE chats SET updated_at=?, last_message_id=? WHERE id=?",
+                (ts, last_id, chat_id),
+            )
+
 
 def trim_after(chat_id: str, msg_id: int):
     with _db() as con:
-        con.execute("DELETE FROM messages WHERE chat_id=? AND id>?", (chat_id, int(msg_id)))
-        exists = con.execute("SELECT id FROM messages WHERE chat_id=? AND id=?", (chat_id, int(msg_id))).fetchone()
+        con.execute(
+            "DELETE FROM messages WHERE chat_id=? AND id>?", (chat_id, int(msg_id))
+        )
+        exists = con.execute(
+            "SELECT id FROM messages WHERE chat_id=? AND id=?", (chat_id, int(msg_id))
+        ).fetchone()
         last_id = int(exists["id"]) if exists else None
-        con.execute("UPDATE chats SET last_message_id=?, updated_at=? WHERE id=?", (last_id, _now(), chat_id))
+        con.execute(
+            "UPDATE chats SET last_message_id=?, updated_at=? WHERE id=?",
+            (last_id, _now(), chat_id),
+        )
+
 
 def update_message_content(chat_id: str, msg_id: int, new_content: str):
     with _db() as con:
-        con.execute("UPDATE messages SET content=? WHERE chat_id=? AND id=?", (new_content.strip(), chat_id, int(msg_id)))
+        con.execute(
+            "UPDATE messages SET content=? WHERE chat_id=? AND id=?",
+            (new_content.strip(), chat_id, int(msg_id)),
+        )
         con.execute("UPDATE chats SET updated_at=? WHERE id=?", (_now(), chat_id))
+
 
 def export_chat_markdown(chat_id: str) -> str:
     data = get_chat(chat_id, limit=5000, offset=0)
     chat = data["chat"]
     msgs = data["messages"]
 
-    lines = [f"# {chat.get('title','Chat')}", ""]
+    lines = [f"# {chat.get('title', 'Chat')}", ""]
     for m in msgs:
         role = (m.get("role") or "").upper()
         ts = m.get("created_at")
@@ -453,18 +593,30 @@ def export_chat_markdown(chat_id: str) -> str:
         lines.append("")
     return "\n".join(lines)
 
+
 # -------- prefs (DB doc selection per chat) --------
+
 
 def get_prefs(chat_id: str) -> dict[str, Any]:
     with _db() as con:
-        row = con.execute("SELECT * FROM chat_prefs WHERE chat_id=?", (chat_id,)).fetchone()
+        row = con.execute(
+            "SELECT * FROM chat_prefs WHERE chat_id=?", (chat_id,)
+        ).fetchone()
         if not row:
             c = con.execute("SELECT id FROM chats WHERE id=?", (chat_id,)).fetchone()
             if not c:
                 raise KeyError("chat not found")
             ts = _now()
-            con.execute("INSERT INTO chat_prefs(chat_id, rag_enabled, doc_ids_json, updated_at) VALUES(?,0,NULL,?)", (chat_id, ts))
-            return {"chat_id": chat_id, "rag_enabled": 0, "doc_ids": None, "updated_at": ts}
+            con.execute(
+                "INSERT INTO chat_prefs(chat_id, rag_enabled, doc_ids_json, updated_at) VALUES(?,0,NULL,?)",
+                (chat_id, ts),
+            )
+            return {
+                "chat_id": chat_id,
+                "rag_enabled": 0,
+                "doc_ids": None,
+                "updated_at": ts,
+            }
         doc_ids = None
         if row["doc_ids_json"] is not None:
             try:
@@ -473,18 +625,31 @@ def get_prefs(chat_id: str) -> dict[str, Any]:
                     doc_ids = [int(x) for x in v if x is not None and str(x).isdigit()]
             except Exception:
                 doc_ids = []
-        return {"chat_id": chat_id, "rag_enabled": int(row["rag_enabled"]), "doc_ids": doc_ids, "updated_at": int(row["updated_at"])}
+        return {
+            "chat_id": chat_id,
+            "rag_enabled": int(row["rag_enabled"]),
+            "doc_ids": doc_ids,
+            "updated_at": int(row["updated_at"]),
+        }
 
-def set_prefs(chat_id: str, rag_enabled: Optional[bool] = None, doc_ids: Any = "__nochange__"):
+
+def set_prefs(
+    chat_id: str, rag_enabled: Optional[bool] = None, doc_ids: Any = "__nochange__"
+):
     ts = _now()
     with _db() as con:
         c = con.execute("SELECT id FROM chats WHERE id=?", (chat_id,)).fetchone()
         if not c:
             raise KeyError("chat not found")
 
-        cur = con.execute("SELECT * FROM chat_prefs WHERE chat_id=?", (chat_id,)).fetchone()
+        cur = con.execute(
+            "SELECT * FROM chat_prefs WHERE chat_id=?", (chat_id,)
+        ).fetchone()
         if not cur:
-            con.execute("INSERT INTO chat_prefs(chat_id, rag_enabled, doc_ids_json, updated_at) VALUES(?,0,NULL,?)", (chat_id, ts))
+            con.execute(
+                "INSERT INTO chat_prefs(chat_id, rag_enabled, doc_ids_json, updated_at) VALUES(?,0,NULL,?)",
+                (chat_id, ts),
+            )
 
         updates = []
         params: list[Any] = []
@@ -517,7 +682,9 @@ def set_prefs(chat_id: str, rag_enabled: Optional[bool] = None, doc_ids: Any = "
         params.append(chat_id)
         con.execute(sql, params)
 
+
 # -------- fork/branch --------
+
 
 def fork_chat(chat_id: str, upto_msg_id: int) -> dict[str, Any]:
     upto_msg_id = int(upto_msg_id)
@@ -526,37 +693,54 @@ def fork_chat(chat_id: str, upto_msg_id: int) -> dict[str, Any]:
         if not base:
             raise KeyError("chat not found")
 
-        rows = con.execute("""
+        rows = con.execute(
+            """
           SELECT role, content, created_at, model, meta_json
             FROM messages
            WHERE chat_id=? AND id<=?
            ORDER BY created_at ASC, id ASC
-        """, (chat_id, upto_msg_id)).fetchall()
+        """,
+            (chat_id, upto_msg_id),
+        ).fetchall()
 
     new_title = f"Fork: {base['title']}"
     new = create_chat(new_title, parent_chat_id=chat_id)
 
     prefs = get_prefs(chat_id)
-    set_prefs(new["id"], rag_enabled=bool(prefs.get("rag_enabled")), doc_ids=prefs.get("doc_ids"))
+    set_prefs(
+        new["id"],
+        rag_enabled=bool(prefs.get("rag_enabled")),
+        doc_ids=prefs.get("doc_ids"),
+    )
 
-    append_messages(new["id"], [{
-        "role": r["role"],
-        "content": r["content"],
-        "model": r["model"],
-        "meta_json": r["meta_json"],
-    } for r in rows])
+    append_messages(
+        new["id"],
+        [
+            {
+                "role": r["role"],
+                "content": r["content"],
+                "model": r["model"],
+                "meta_json": r["meta_json"],
+            }
+            for r in rows
+        ],
+    )
 
     return new
 
+
 # -------- search (FTS) --------
 
-def search_messages(q: str, chat_id: Optional[str] = None, limit: int = 25, offset: int = 0) -> list[dict[str, Any]]:
+
+def search_messages(
+    q: str, chat_id: Optional[str] = None, limit: int = 25, offset: int = 0
+) -> list[dict[str, Any]]:
     q = (q or "").strip()
     if not q:
-        return [] 
+        return []
 
     limit = max(1, min(int(limit), 200))
-    offset = max(0, int(offset)) 
+    offset = max(0, int(offset))
 
     safe_q = _fts_safe_query(q)
     if not safe_q:
@@ -567,7 +751,7 @@ def search_messages(q: str, chat_id: Optional[str] = None, limit: int = 25, offs
         where = ""
         if chat_id:
             where = " AND m.chat_id=? "
-            params.append(chat_id) 
+            params.append(chat_id)
 
         sql = f"""
         SELECT
@@ -588,14 +772,20 @@ def search_messages(q: str, chat_id: Optional[str] = None, limit: int = 25, offs
         params2 = [safe_q] + params + [limit, offset]
         return [dict(r) for r in con.execute(sql, params2).fetchall()]
 
+
 # -------- tags --------
+
 
 def add_tag(chat_id: str, tag: str):
     t = (tag or "").strip().lower()
     if not t:
         return
     with _db() as con:
-        con.execute("INSERT OR IGNORE INTO chat_tags(chat_id, tag, created_at) VALUES(?,?,?)", (chat_id, t, _now()))
+        con.execute(
+            "INSERT OR IGNORE INTO chat_tags(chat_id, tag, created_at) VALUES(?,?,?)",
+            (chat_id, t, _now()),
+        )
+
 
 def remove_tag(chat_id: str, tag: str):
     t = (tag or "").strip().lower()
@@ -604,22 +794,40 @@ def remove_tag(chat_id: str, tag: str):
     with _db() as con:
         con.execute("DELETE FROM chat_tags WHERE chat_id=? AND tag=?", (chat_id, t))
 
+
 def list_tags(chat_id: str) -> list[str]:
     with _db() as con:
-        rows = con.execute("SELECT tag FROM chat_tags WHERE chat_id=? ORDER BY tag ASC", (chat_id,)).fetchall()
+        rows = con.execute(
+            "SELECT tag FROM chat_tags WHERE chat_id=? ORDER BY tag ASC", (chat_id,)
+        ).fetchall()
         return [r["tag"] for r in rows]
+
 
 # -------- chat settings --------
 
+
 def get_settings(chat_id: str) -> dict[str, Any]:
     with _db() as con:
-        row = con.execute("SELECT * FROM chat_settings WHERE chat_id=?", (chat_id,)).fetchone()
+        row = con.execute(
+            "SELECT * FROM chat_settings WHERE chat_id=?", (chat_id,)
+        ).fetchone()
         if not row:
             return {"chat_id": chat_id}
         return dict(row)
 
+
 def set_settings(chat_id: str, **kwargs):
-    allowed = {"model", "temperature", "num_ctx", "top_k", "use_mmr", "mmr_lambda", "autosummary_enabled", "autosummary_every", "autosummary_last_msg_id"}
+    allowed = {
+        "model",
+        "temperature",
+        "num_ctx",
+        "top_k",
+        "use_mmr",
+        "mmr_lambda",
+        "autosummary_enabled",
+        "autosummary_every",
+        "autosummary_last_msg_id",
+    }
     patch = {k: v for k, v in kwargs.items() if k in allowed}
 
     if not patch:
@@ -627,7 +835,10 @@ def set_settings(chat_id: str, **kwargs):
 
     ts = _now()
     with _db() as con:
-        con.execute("INSERT OR IGNORE INTO chat_settings(chat_id, updated_at) VALUES(?,?)", (chat_id, ts))
+        con.execute(
+            "INSERT OR IGNORE INTO chat_settings(chat_id, updated_at) VALUES(?,?)",
+            (chat_id, ts),
+        )
 
         sets = []
         params: list[Any] = []
@@ -641,25 +852,35 @@ def set_settings(chat_id: str, **kwargs):
         params.append(ts)
         params.append(chat_id)
 
-        con.execute("UPDATE chat_settings SET " + ", ".join(sets) + " WHERE chat_id=?", params)
+        con.execute(
+            "UPDATE chat_settings SET " + ", ".join(sets) + " WHERE chat_id=?", params
+        )
+
 
 # -------- message context (jump) --------
+
 
 def get_message_context(chat_id: str, msg_id: int, span: int = 20) -> dict[str, Any]:
     span = max(1, min(int(span), 200))
     msg_id = int(msg_id)
 
     with _db() as con:
-        anchor = con.execute("SELECT id, created_at FROM messages WHERE chat_id=? AND id=?", (chat_id, msg_id)).fetchone()
+        anchor = con.execute(
+            "SELECT id, created_at FROM messages WHERE chat_id=? AND id=?",
+            (chat_id, msg_id),
+        ).fetchone()
         if not anchor:
             raise KeyError("message not found")
 
-        rows = con.execute("""
+        rows = con.execute(
+            """
           SELECT id, role, content, created_at, model, meta_json
           FROM messages
           WHERE chat_id=?
           ORDER BY created_at ASC, id ASC
-        """, (chat_id,)).fetchall()
+        """,
+            (chat_id,),
+        ).fetchall()
 
     ids = [r["id"] for r in rows]
     try:
@@ -671,8 +892,10 @@ def get_message_context(chat_id: str, msg_id: int, span: int = 20) -> dict[str, 
     hi = min(len(rows), idx + span + 1)
     return {"anchor_id": msg_id, "messages": [dict(r) for r in rows[lo:hi]]}
 
+
 async def trim_after_async(chat_id: str, msg_id: int):
     await asyncio.to_thread(trim_after, chat_id, msg_id)
+
 
 async def update_message_content_async(chat_id: str, msg_id: int, new_content: str):
     await asyncio.to_thread(update_message_content, chat_id, msg_id, new_content)

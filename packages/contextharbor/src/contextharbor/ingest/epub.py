@@ -7,10 +7,10 @@ import time
 from typing import Any, Optional
 
 from bs4 import BeautifulSoup
-from ebooklib import epub, ITEM_DOCUMENT  # type: ignore
 
 from .. import config
 from ..stores import ragstore
+from ..services.evidence import heuristic_doc_genre
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,9 @@ def _default_library_dir() -> Path:
 
 def _extract_text_from_html(html: str) -> str:
     soup = BeautifulSoup(html or "", "lxml")
-    for tag in soup(["script", "style", "noscript", "svg", "header", "footer", "nav", "aside"]):
+    for tag in soup(
+        ["script", "style", "noscript", "svg", "header", "footer", "nav", "aside"]
+    ):
         try:
             tag.decompose()
         except Exception:
@@ -42,7 +44,17 @@ def _extract_text_from_html(html: str) -> str:
     return "\n".join(lines)
 
 
-def _read_epub(epub_path: Path, *, root: Path | None = None) -> tuple[EpubInfo, list[EpubSection]]:
+def _read_epub(
+    epub_path: Path, *, root: Path | None = None
+) -> tuple[EpubInfo, list[EpubSection]]:
+    try:
+        from ebooklib import epub, ITEM_DOCUMENT  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError(
+            "EPUB ingest requires the optional dependency 'ebooklib'. "
+            "Install it with: python -m pip install ebooklib"
+        ) from exc
+
     book = epub.read_epub(str(epub_path))
 
     title = ""
@@ -71,7 +83,11 @@ def _read_epub(epub_path: Path, *, root: Path | None = None) -> tuple[EpubInfo, 
     for idx, item in enumerate(book.get_items_of_type(ITEM_DOCUMENT), start=1):
         try:
             raw = item.get_content()
-            html = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else str(raw)
+            html = (
+                raw.decode("utf-8", errors="ignore")
+                if isinstance(raw, (bytes, bytearray))
+                else str(raw)
+            )
             txt = _extract_text_from_html(html)
             if not txt:
                 continue
@@ -105,7 +121,9 @@ def _read_epub(epub_path: Path, *, root: Path | None = None) -> tuple[EpubInfo, 
     return info, sections
 
 
-def list_epubs(*, query: Optional[str] = None, limit: int = 25, library_dir: Optional[str] = None) -> list[dict[str, Any]]:
+def list_epubs(
+    *, query: Optional[str] = None, limit: int = 25, library_dir: Optional[str] = None
+) -> list[dict[str, Any]]:
     root = Path(library_dir) if library_dir else _default_library_dir()
     q = (query or "").strip().lower()
     limit = max(1, min(int(limit), 200))
@@ -160,20 +178,30 @@ async def ingest_epub(
     embed_model: str | None = None,
     library_dir: Optional[str] = None,
 ) -> dict[str, Any]:
-    root = (Path(library_dir) if library_dir else _default_library_dir()).expanduser().resolve()
+    root = (
+        (Path(library_dir) if library_dir else _default_library_dir())
+        .expanduser()
+        .resolve()
+    )
     p = Path(path or "")
     if p.is_absolute():
         try:
             _ = p.expanduser().resolve().relative_to(root)
         except Exception:
-            return {"ok": False, "error": f"epub path must be under library_dir: {root}"}
+            return {
+                "ok": False,
+                "error": f"epub path must be under library_dir: {root}",
+            }
         p = p.expanduser().resolve()
     else:
         p = (root / p).expanduser().resolve()
         try:
             _ = p.relative_to(root)
         except Exception:
-            return {"ok": False, "error": f"epub path must be under library_dir: {root}"}
+            return {
+                "ok": False,
+                "error": f"epub path must be under library_dir: {root}",
+            }
 
     if not p.exists() or not p.is_file():
         return {"ok": False, "error": f"epub not found: {p}"}
@@ -192,7 +220,11 @@ async def ingest_epub(
             "already_ingested": True,
             "doc_id": int(existing.get("id") or 0),
             "title": existing.get("title") or p.stem,
-            "authors": [a.strip() for a in str(existing.get("author") or "").split(",") if a.strip()],
+            "authors": [
+                a.strip()
+                for a in str(existing.get("author") or "").split(",")
+                if a.strip()
+            ],
             "path": rel_path,
         }
 
@@ -204,8 +236,27 @@ async def ingest_epub(
     if info.authors:
         filename = f"epub:{info.title} - {', '.join(info.authors)}"
 
+    genre, _why = heuristic_doc_genre(
+        title=info.title,
+        author=", ".join(info.authors) if info.authors else None,
+        path=info.path,
+        tags=["epub"],
+        default_genre=str(
+            getattr(config.config, "epub_default_genre", "unknown") or "unknown"
+        ),
+    )
+    tags = ["epub"]
+    if genre in {"fiction", "nonfiction", "reference"}:
+        tags.append(genre)
+
     meta_json = json.dumps(  # stored as string; keep it small
-        {"source": "epub", "title": info.title, "authors": info.authors, "path": info.path},
+        {
+            "source": "epub",
+            "title": info.title,
+            "authors": info.authors,
+            "path": info.path,
+            "genre": genre,
+        },
         ensure_ascii=False,
     )
 
@@ -219,6 +270,7 @@ async def ingest_epub(
         path=info.path,
         meta_json=meta_json,
         group_name="epub",
+        tags=tags,
     )
 
     return {
@@ -244,6 +296,10 @@ async def ingest_epubs_by_query(
     matches = list_epubs(query=q, limit=limit, library_dir=library_dir)
     results: list[dict[str, Any]] = []
     for m in matches:
-        r = await ingest_epub(path=str(m.get("path") or ""), embed_model=embed_model, library_dir=library_dir)
+        r = await ingest_epub(
+            path=str(m.get("path") or ""),
+            embed_model=embed_model,
+            library_dir=library_dir,
+        )
         results.append(r)
     return {"ok": True, "results": results, "count": len(results)}
