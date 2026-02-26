@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os, sqlite3, hashlib, math, time, re
+import os, sqlite3, hashlib, math, time, re, json
 from array import array
 from typing import Optional, Any
 from contextlib import contextmanager
@@ -10,7 +10,7 @@ from .. import config
 
 DB_PATH = os.path.abspath(os.getenv("RAG_DB", config.config.rag_db))
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-DEFAULT_EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+DEFAULT_EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-latest")
 
 MAX_DOC_BYTES = int(os.getenv("RAG_MAX_DOC_BYTES", str(10 * 1024 * 1024)))
 MAX_TOP_K = int(os.getenv("RAG_MAX_TOPK", "20"))
@@ -25,8 +25,10 @@ MMR_LAMBDA = float(os.getenv("RAG_MMR_LAMBDA", "0.75"))
 
 _http: httpx.AsyncClient | None = None
 
+
 def _now() -> int:
     return int(time.time())
+
 
 def _conn():
     c = sqlite3.connect(DB_PATH, timeout=10, check_same_thread=False)
@@ -39,6 +41,7 @@ def _conn():
     c.execute("PRAGMA cache_size=-20000;")
     return c
 
+
 @contextmanager
 def _db():
     con = _conn()
@@ -48,27 +51,47 @@ def _db():
     finally:
         con.close()
 
+
 def _get_user_version(con: sqlite3.Connection) -> int:
     return int(con.execute("PRAGMA user_version;").fetchone()[0] or 0)
 
+
 def _set_user_version(con: sqlite3.Connection, v: int):
     con.execute(f"PRAGMA user_version={int(v)};")
+
 
 def init_db():
     with _db() as con:
         v = _get_user_version(con)
         if v < 1:
-            _migrate_1_baseline(con); _set_user_version(con, 1); v = 1
+            _migrate_1_baseline(con)
+            _set_user_version(con, 1)
+            v = 1
         if v < 2:
-            _migrate_2_dim_and_hash(con); _set_user_version(con, 2); v = 2
+            _migrate_2_dim_and_hash(con)
+            _set_user_version(con, 2)
+            v = 2
         if v < 3:
-            _migrate_3_fts_prefilter(con); _set_user_version(con, 3); v = 3
+            _migrate_3_fts_prefilter(con)
+            _set_user_version(con, 3)
+            v = 3
         if v < 4:
-            _migrate_4_doc_meta(con); _set_user_version(con, 4); v = 4
+            _migrate_4_doc_meta(con)
+            _set_user_version(con, 4)
+            v = 4
         if v < 5:
-            _migrate_5_doc_fields(con); _set_user_version(con, 5); v = 5
+            _migrate_5_doc_fields(con)
+            _set_user_version(con, 5)
+            v = 5
         if v < 6:
-            _migrate_6_source_path_index(con); _set_user_version(con, 6); v = 6
+            _migrate_6_source_path_index(con)
+            _set_user_version(con, 6)
+            v = 6
+        if v < 7:
+            _migrate_7_doc_tags(con)
+            _set_user_version(con, 7)
+            v = 7
+
 
 def _migrate_1_baseline(con: sqlite3.Connection):
     con.execute("""
@@ -92,7 +115,10 @@ def _migrate_1_baseline(con: sqlite3.Connection):
     """)
     con.execute("CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id);")
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_docs_sha ON docs(sha256);")
-    con.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_chunks_doc_idx ON chunks(doc_id, chunk_index);")
+    con.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_chunks_doc_idx ON chunks(doc_id, chunk_index);"
+    )
+
 
 def _migrate_2_dim_and_hash(con: sqlite3.Connection):
     cols_docs = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
@@ -101,10 +127,13 @@ def _migrate_2_dim_and_hash(con: sqlite3.Connection):
     if "embed_dim" not in cols_docs:
         con.execute("ALTER TABLE docs ADD COLUMN embed_dim INTEGER;")
 
-    cols_chunks = {r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()}
+    cols_chunks = {
+        r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()
+    }
     if "chunk_sha" not in cols_chunks:
         con.execute("ALTER TABLE chunks ADD COLUMN chunk_sha TEXT;")
     con.execute("CREATE INDEX IF NOT EXISTS idx_chunks_sha ON chunks(chunk_sha);")
+
 
 def _migrate_3_fts_prefilter(con: sqlite3.Connection):
     con.execute("""
@@ -153,6 +182,7 @@ def _migrate_3_fts_prefilter(con: sqlite3.Connection):
      WHERE c.id NOT IN (SELECT rowid FROM chunks_fts);
     """)
 
+
 def _migrate_4_doc_meta(con: sqlite3.Connection):
     cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
     if "weight" not in cols:
@@ -175,7 +205,9 @@ def _migrate_5_doc_fields(con: sqlite3.Connection):
     if "meta_json" not in cols_docs:
         con.execute("ALTER TABLE docs ADD COLUMN meta_json TEXT;")
 
-    cols_chunks = {r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()}
+    cols_chunks = {
+        r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()
+    }
     if "section" not in cols_chunks:
         con.execute("ALTER TABLE chunks ADD COLUMN section TEXT;")
 
@@ -187,7 +219,44 @@ def _migrate_6_source_path_index(con: sqlite3.Connection):
     # Fast lookups for idempotent ingests by (source, path).
     cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
     if {"source", "path"}.issubset(cols):
-        con.execute("CREATE INDEX IF NOT EXISTS idx_docs_source_path ON docs(source, path);")
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_docs_source_path ON docs(source, path);"
+        )
+
+
+def _migrate_7_doc_tags(con: sqlite3.Connection):
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+    if "tags_json" not in cols:
+        con.execute("ALTER TABLE docs ADD COLUMN tags_json TEXT;")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_docs_tags ON docs(tags_json);")
+
+
+def _normalize_tags(tags: list[str] | None) -> list[str]:
+    if not tags:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for t in tags:
+        if not isinstance(t, str):
+            continue
+        tt = t.strip().lower()
+        if not tt:
+            continue
+        if len(tt) > 48:
+            tt = tt[:48]
+        if tt in seen:
+            continue
+        seen.add(tt)
+        out.append(tt)
+    return out
+
+
+def _tags_json(tags: list[str] | None) -> str | None:
+    norm = _normalize_tags(tags)
+    if not norm:
+        return None
+    return json.dumps(norm, ensure_ascii=False)
+
 
 def _client() -> httpx.AsyncClient:
     global _http
@@ -196,48 +265,91 @@ def _client() -> httpx.AsyncClient:
         _http = httpx.AsyncClient(timeout=None, limits=limits)
     return _http
 
+
 async def embed_texts(texts: list[str], model: str | None = None) -> list[list[float]]:
-    model = model or DEFAULT_EMBED_MODEL
-    embeddings = []
+    primary = (model or DEFAULT_EMBED_MODEL).strip()
+    # Back-compat + common tags. First successful model becomes sticky.
+    candidates = [primary]
+    for alt in ("nomic-embed-latest", "nomic-embed-text:latest", "nomic-embed-text"):
+        if alt not in candidates:
+            candidates.append(alt)
+
+    embeddings: list[list[float]] = []
+    chosen = primary
+
     for text in texts:
-        r = await _client().post(f"{OLLAMA_URL}/api/embeddings", json={"model": model, "prompt": text})
-        r.raise_for_status()
-        emb = r.json().get("embedding")
-        if emb:
-            embeddings.append(emb)
+        last_err: Exception | None = None
+        emb: list[float] | None = None
+
+        for m in candidates:
+            try:
+                r = await _client().post(
+                    f"{OLLAMA_URL}/api/embeddings", json={"model": m, "prompt": text}
+                )
+                r.raise_for_status()
+                val = r.json().get("embedding")
+                if isinstance(val, list) and val:
+                    emb = val
+                    chosen = m
+                    if candidates and candidates[0] != chosen:
+                        candidates = [chosen] + [c for c in candidates if c != chosen]
+                    break
+            except Exception as exc:
+                last_err = exc
+                continue
+
+        if emb is None:
+            if last_err is not None:
+                raise last_err
+            raise RuntimeError("embeddings returned no vectors")
+
+        embeddings.append(emb)
+
     return embeddings
+
 
 def _pack(vec: list[float]) -> bytes:
     return array("f", vec).tobytes()
 
+
 def _unpack(blob: bytes) -> list[float]:
-    a = array("f"); a.frombytes(blob); return a.tolist()
+    a = array("f")
+    a.frombytes(blob)
+    return a.tolist()
+
 
 def _norm(v: list[float]) -> float:
-    return math.sqrt(sum(x*x for x in v)) or 1e-12
+    return math.sqrt(sum(x * x for x in v)) or 1e-12
+
 
 def _dot(a: list[float], b: list[float]) -> float:
-    return sum(x*y for x, y in zip(a, b))
+    return sum(x * y for x, y in zip(a, b))
+
 
 def _cosine(q: list[float], qn: float, v: list[float], vn: float) -> float:
     return _dot(q, v) / (qn * vn + 1e-12)
 
+
 def _sha256_text(s: str) -> str:
     return hashlib.sha256((s or "").encode("utf-8", errors="ignore")).hexdigest()
+
 
 def embedding_to_array(emb) -> array:
     if isinstance(emb, array):
         return emb
     return array("f", [float(x) for x in emb])
 
+
 def embedding_to_blob(emb) -> bytes:
     a = embedding_to_array(emb)
     return a.tobytes()
+
 
 def embedding_blob_to_array(blob: bytes) -> array:
     a = array("f")
     a.frombytes(blob)
     return a
+
 
 def cosine(a: array, b: array) -> float:
     if not a or not b or len(a) != len(b):
@@ -251,10 +363,12 @@ def cosine(a: array, b: array) -> float:
         nb += float(y) * float(y)
     if na <= 0.0 or nb <= 0.0:
         return 0.0
-    return dot / ((na ** 0.5) * (nb ** 0.5))
+    return dot / ((na**0.5) * (nb**0.5))
+
 
 _sentence_split = re.compile(r"(?<=[.!?])\s+")
 _ws = re.compile(r"\s+")
+
 
 def chunk_text(text: str, max_chars: int = 4000, overlap: int = 700) -> list[str]:
     """
@@ -280,48 +394,54 @@ def chunk_text(text: str, max_chars: int = 4000, overlap: int = 700) -> list[str
     paras = [p.strip() for p in text.split("\n\n") if p.strip()]
     out: list[str] = []
     buf = ""
-    
+
     def flush(b: str):
         b = b.strip()
         if b:
             out.append(b)
-    
+
     for p in paras:
         if len(p) <= max_chars:
             if len(buf) + len(p) + 2 <= max_chars:
                 buf = (buf + "\n\n" + p).strip() if buf else p
             else:
-                flush(buf); buf = p
+                flush(buf)
+                buf = p
             continue
-        
-        flush(buf); buf = ""
+
+        flush(buf)
+        buf = ""
         sents = _sentence_split.split(_ws.sub(" ", p).strip())
         chunk = ""
         for s in sents:
-            if not s: continue
+            if not s:
+                continue
             if len(chunk) + len(s) + 1 <= max_chars:
                 chunk = (chunk + " " + s).strip() if chunk else s
             else:
-                flush(chunk); chunk = s
+                flush(chunk)
+                chunk = s
             while len(chunk) > max_chars:
                 flush(chunk[:max_chars])
-                chunk = chunk[max_chars - overlap:]
+                chunk = chunk[max_chars - overlap :]
         flush(chunk)
-    
+
     flush(buf)
-    
+
     if overlap > 0 and len(out) > 1:
         smoothed = []
         for i, ch in enumerate(out):
             if i == 0:
-                smoothed.append(ch); continue
+                smoothed.append(ch)
+                continue
             prev = smoothed[-1]
             tail = prev[-overlap:] if len(prev) > overlap else prev
             cur = (tail + "\n" + ch).strip()
             smoothed.append(cur[:max_chars] if len(cur) > max_chars else cur)
         out = smoothed
-    
+
     return out
+
 
 async def add_document(
     filename: str,
@@ -334,6 +454,7 @@ async def add_document(
     path: str | None = None,
     meta_json: str | None = None,
     group_name: str | None = None,
+    tags: list[str] | None = None,
 ) -> int:
     text = text or ""
     if len(text.encode("utf-8", errors="ignore")) > MAX_DOC_BYTES:
@@ -349,7 +470,7 @@ async def add_document(
 
     embeddings: list[list[float]] = []
     for i in range(0, len(chunks), EMBED_BATCH):
-        embeddings.extend(await embed_texts(chunks[i:i + EMBED_BATCH], embed_model))
+        embeddings.extend(await embed_texts(chunks[i : i + EMBED_BATCH], embed_model))
 
     if len(embeddings) != len(chunks):
         raise RuntimeError("Embedding count mismatch")
@@ -364,7 +485,34 @@ async def add_document(
             return int(row["id"])
 
         cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
-        if {"source", "title", "author", "path", "meta_json"}.issubset(cols):
+        has_meta = {"source", "title", "author", "path", "meta_json"}.issubset(cols)
+        has_tags = "tags_json" in cols
+        tags_json = _tags_json(tags)
+
+        if has_meta and has_tags:
+            cur = con.execute(
+                """
+                INSERT INTO docs(
+                  filename, sha256, created_at, embed_model, embed_dim,
+                  weight, group_name, source, title, author, path, meta_json, tags_json
+                ) VALUES(?,?,?,?,?,1.0,?,?,?,?,?,?,?)
+                """,
+                (
+                    filename,
+                    sha,
+                    created_at,
+                    embed_model,
+                    embed_dim,
+                    (group_name or None),
+                    (source or None),
+                    (title or None),
+                    (author or None),
+                    (path or None),
+                    (meta_json or None),
+                    (tags_json or None),
+                ),
+            )
+        elif has_meta:
             cur = con.execute(
                 """
                 INSERT INTO docs(
@@ -393,7 +541,9 @@ async def add_document(
             )
         doc_id = int(cur.lastrowid or 0)
 
-        cols_chunks = {r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()}
+        cols_chunks = {
+            r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()
+        }
         has_section = "section" in cols_chunks
 
         for idx, (ch, emb) in enumerate(zip(chunks, embeddings)):
@@ -423,6 +573,7 @@ async def add_document_sections(
     path: str | None = None,
     meta_json: str | None = None,
     group_name: str | None = None,
+    tags: list[str] | None = None,
     chunk_max_chars: int = 4000,
     chunk_overlap_chars: int = 700,
 ) -> int:
@@ -433,7 +584,9 @@ async def add_document_sections(
     pth = (path or "").strip() or None
     if src and pth:
         with _db() as con:
-            cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+            cols = {
+                r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()
+            }
             if {"source", "path"}.issubset(cols):
                 row = con.execute(
                     "SELECT id FROM docs WHERE source=? AND path=? ORDER BY created_at DESC LIMIT 1",
@@ -459,7 +612,9 @@ async def add_document_sections(
     # Chunk per section so we can retain section labels.
     chunk_rows: list[tuple[str | None, str]] = []
     for section_label, txt in sections or []:
-        for ch in chunk_text(txt or "", max_chars=chunk_max_chars, overlap=chunk_overlap_chars):
+        for ch in chunk_text(
+            txt or "", max_chars=chunk_max_chars, overlap=chunk_overlap_chars
+        ):
             if ch:
                 chunk_rows.append((section_label, ch))
     if not chunk_rows:
@@ -469,7 +624,9 @@ async def add_document_sections(
 
     embeddings: list[list[float]] = []
     for i in range(0, len(chunks_only), EMBED_BATCH):
-        embeddings.extend(await embed_texts(chunks_only[i : i + EMBED_BATCH], embed_model))
+        embeddings.extend(
+            await embed_texts(chunks_only[i : i + EMBED_BATCH], embed_model)
+        )
     if len(embeddings) != len(chunks_only):
         raise RuntimeError("Embedding count mismatch")
 
@@ -483,7 +640,34 @@ async def add_document_sections(
             return int(row["id"])
 
         cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
-        if {"source", "title", "author", "path", "meta_json"}.issubset(cols):
+        has_meta = {"source", "title", "author", "path", "meta_json"}.issubset(cols)
+        has_tags = "tags_json" in cols
+        tags_json = _tags_json(tags)
+
+        if has_meta and has_tags:
+            cur = con.execute(
+                """
+                INSERT INTO docs(
+                  filename, sha256, created_at, embed_model, embed_dim,
+                  weight, group_name, source, title, author, path, meta_json, tags_json
+                ) VALUES(?,?,?,?,?,1.0,?,?,?,?,?,?,?)
+                """,
+                (
+                    filename,
+                    sha,
+                    created_at,
+                    embed_model,
+                    embed_dim,
+                    (group_name or None),
+                    (src or None),
+                    (title or None),
+                    (author or None),
+                    (pth or None),
+                    (meta_json or None),
+                    (tags_json or None),
+                ),
+            )
+        elif has_meta:
             cur = con.execute(
                 """
                 INSERT INTO docs(
@@ -512,7 +696,9 @@ async def add_document_sections(
             )
 
         doc_id = int(cur.lastrowid or 0)
-        cols_chunks = {r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()}
+        cols_chunks = {
+            r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()
+        }
         has_section = "section" in cols_chunks
 
         for idx, ((section_label, ch), emb) in enumerate(zip(chunk_rows, embeddings)):
@@ -521,7 +707,15 @@ async def add_document_sections(
             if has_section:
                 con.execute(
                     "INSERT INTO chunks(doc_id, chunk_index, section, text, emb, norm, chunk_sha) VALUES(?,?,?,?,?,?,?)",
-                    (doc_id, idx, (section_label or None), ch, _pack(emb), float(n), chunk_sha),
+                    (
+                        doc_id,
+                        idx,
+                        (section_label or None),
+                        ch,
+                        _pack(emb),
+                        float(n),
+                        chunk_sha,
+                    ),
                 )
             else:
                 con.execute(
@@ -531,21 +725,108 @@ async def add_document_sections(
 
         return doc_id
 
+
 def list_documents():
     with _db() as con:
         cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
         extra = ""
         if {"source", "title", "author", "path", "meta_json"}.issubset(cols):
             extra = ", d.source, d.title, d.author, d.path, d.meta_json"
-        rows = con.execute("""
+        if "tags_json" in cols:
+            extra += ", d.tags_json"
+        rows = con.execute(
+            """
           SELECT d.id, d.filename, d.created_at, d.embed_model, d.embed_dim,
                   d.weight, d.group_name,
                   (SELECT COUNT(1) FROM chunks c WHERE c.doc_id=d.id) AS chunk_count
                   {extra}
             FROM docs d
            ORDER BY d.created_at DESC
-        """.format(extra=extra)).fetchall()
-        return [dict(r) for r in rows]
+        """.format(extra=extra)
+        ).fetchall()
+
+        out = []
+        for r in rows:
+            d = dict(r)
+            raw = d.get("tags_json")
+            tags: list[str] = []
+            if isinstance(raw, str) and raw.strip():
+                try:
+                    val = json.loads(raw)
+                    if isinstance(val, list):
+                        tags = [str(x).strip().lower() for x in val if str(x).strip()]
+                except Exception:
+                    tags = []
+            d["tags"] = tags
+            out.append(d)
+        return out
+
+
+def has_any_documents() -> bool:
+    with _db() as con:
+        row = con.execute("SELECT 1 FROM docs LIMIT 1;").fetchone()
+        return bool(row)
+
+
+def search_documents(query: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    q = (query or "").strip().lower()
+    limit = max(1, min(int(limit), 100))
+    if not q:
+        return []
+
+    like = f"%{q}%"
+
+    with _db() as con:
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+        has_meta = {"source", "title", "author", "path", "meta_json"}.issubset(cols)
+        extra = ", d.source, d.title, d.author, d.path, d.meta_json" if has_meta else ""
+        if "tags_json" in cols:
+            extra += ", d.tags_json"
+
+        # Always searchable by filename.
+        where = ["lower(d.filename) LIKE ?"]
+        params: list[Any] = [like]
+
+        if has_meta:
+            where.extend(
+                [
+                    "lower(d.title) LIKE ?",
+                    "lower(d.author) LIKE ?",
+                    "lower(d.path) LIKE ?",
+                ]
+            )
+            params.extend([like, like, like])
+
+        params.append(limit)
+
+        rows = con.execute(
+            """
+            SELECT d.id, d.filename, d.created_at, d.embed_model, d.embed_dim,
+                   d.weight, d.group_name,
+                   (SELECT COUNT(1) FROM chunks c WHERE c.doc_id=d.id) AS chunk_count
+                   {extra}
+              FROM docs d
+             WHERE {where}
+             ORDER BY d.created_at DESC
+             LIMIT ?
+            """.format(extra=extra, where=" OR ".join(where)),
+            params,
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            raw = d.get("tags_json")
+            tags: list[str] = []
+            if isinstance(raw, str) and raw.strip():
+                try:
+                    val = json.loads(raw)
+                    if isinstance(val, list):
+                        tags = [str(x).strip().lower() for x in val if str(x).strip()]
+                except Exception:
+                    tags = []
+            d["tags"] = tags
+            out.append(d)
+        return out
 
 
 def get_document_by_source_path(source: str, path: str) -> dict[str, Any] | None:
@@ -560,7 +841,7 @@ def get_document_by_source_path(source: str, path: str) -> dict[str, Any] | None
         row = con.execute(
             """
             SELECT id, filename, created_at, embed_model, embed_dim, weight, group_name,
-                   source, title, author, path, meta_json
+                   source, title, author, path, meta_json, tags_json
               FROM docs
              WHERE source=? AND path=?
              ORDER BY created_at DESC
@@ -568,7 +849,20 @@ def get_document_by_source_path(source: str, path: str) -> dict[str, Any] | None
             """,
             (src, pth),
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        raw = d.get("tags_json")
+        tags: list[str] = []
+        if isinstance(raw, str) and raw.strip():
+            try:
+                val = json.loads(raw)
+                if isinstance(val, list):
+                    tags = [str(x).strip().lower() for x in val if str(x).strip()]
+            except Exception:
+                tags = []
+        d["tags"] = tags
+        return d
 
 
 def lookup_doc_ids_by_source_paths(source: str, paths: list[str]) -> dict[str, int]:
@@ -598,42 +892,111 @@ def lookup_doc_ids_by_source_paths(source: str, paths: list[str]) -> dict[str, i
                     out[pth] = int(r["id"])
     return out
 
-def update_document(doc_id: int, *, weight: Optional[float] = None, group_name: Optional[str] = None, filename: Optional[str] = None):
+
+def update_document(
+    doc_id: int,
+    *,
+    weight: Optional[float] = None,
+    group_name: Optional[str] = None,
+    filename: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    tags_op: Optional[str] = None,
+):
     sets = []
     params: list[Any] = []
     if weight is not None:
         w = float(weight)
-        if w < 0.0: w = 0.0
-        if w > 5.0: w = 5.0
-        sets.append("weight=?"); params.append(w)
+        if w < 0.0:
+            w = 0.0
+        if w > 5.0:
+            w = 5.0
+        sets.append("weight=?")
+        params.append(w)
     if group_name is not None:
         g = (group_name or "").strip()
-        sets.append("group_name=?"); params.append(g if g else None)
+        sets.append("group_name=?")
+        params.append(g if g else None)
     if filename is not None:
         f = (filename or "").strip()
         if f:
-            sets.append("filename=?"); params.append(f[:260])
+            sets.append("filename=?")
+            params.append(f[:260])
+
+    if tags is not None:
+        # tags_op: set (default), add, remove
+        op = str(tags_op or "set").strip().lower()
+        incoming = _normalize_tags(tags)
+
+        with _db() as con:
+            cols = {
+                r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()
+            }
+            if "tags_json" not in cols:
+                # Older DB; ignore quietly.
+                incoming_json = None
+            else:
+                row = con.execute(
+                    "SELECT tags_json FROM docs WHERE id=?", (int(doc_id),)
+                ).fetchone()
+                current: list[str] = []
+                if row and isinstance(row[0], str) and row[0].strip():
+                    try:
+                        val = json.loads(row[0])
+                        if isinstance(val, list):
+                            current = [
+                                str(x).strip().lower() for x in val if str(x).strip()
+                            ]
+                    except Exception:
+                        current = []
+
+                if op == "add":
+                    merged = []
+                    seen = set()
+                    for t in current + incoming:
+                        if t in seen:
+                            continue
+                        seen.add(t)
+                        merged.append(t)
+                    incoming_json = (
+                        json.dumps(merged, ensure_ascii=False) if merged else None
+                    )
+                elif op == "remove":
+                    cut = [t for t in current if t not in set(incoming)]
+                    incoming_json = json.dumps(cut, ensure_ascii=False) if cut else None
+                else:
+                    incoming_json = (
+                        json.dumps(incoming, ensure_ascii=False) if incoming else None
+                    )
+
+        sets.append("tags_json=?")
+        params.append(incoming_json)
     if not sets:
         return
     params.append(int(doc_id))
     with _db() as con:
         con.execute("UPDATE docs SET " + ", ".join(sets) + " WHERE id=?", params)
 
+
 def delete_document(doc_id: int):
     with _db() as con:
         con.execute("DELETE FROM docs WHERE id=?", (doc_id,))
 
+
 def get_chunk(chunk_id: int) -> dict[str, Any]:
     with _db() as con:
-        row = con.execute("""
+        row = con.execute(
+            """
           SELECT c.id, c.doc_id, c.chunk_index, c.text, d.filename
             FROM chunks c
             JOIN docs d ON d.id=c.doc_id
            WHERE c.id=?
-        """, (int(chunk_id),)).fetchone()
+        """,
+            (int(chunk_id),),
+        ).fetchone()
         if not row:
             raise KeyError("chunk not found")
         return dict(row)
+
 
 def get_neighbors(chunk_id: int, span: int = 1) -> dict[str, Any]:
     span = max(1, min(int(span), 5))
@@ -642,12 +1005,15 @@ def get_neighbors(chunk_id: int, span: int = 1) -> dict[str, Any]:
     idx = int(base["chunk_index"])
 
     with _db() as con:
-        rows = con.execute("""
+        rows = con.execute(
+            """
           SELECT id, doc_id, chunk_index, text
             FROM chunks
            WHERE doc_id=? AND chunk_index BETWEEN ? AND ?
            ORDER BY chunk_index ASC
-        """, (did, idx - span, idx + span)).fetchall()
+        """,
+            (did, idx - span, idx + span),
+        ).fetchall()
 
     return {
         "doc_id": did,
@@ -657,12 +1023,18 @@ def get_neighbors(chunk_id: int, span: int = 1) -> dict[str, Any]:
         "chunks": [dict(r) for r in rows],
     }
 
+
 _word = re.compile(r"[A-Za-z0-9_]{2,}")
+
+
 def _fts_safe_query(q: str) -> str:
     toks = _word.findall((q or "").lower())
     return " OR ".join(toks[:24])
 
-def _prefilter_chunk_ids(con: sqlite3.Connection, query: str, doc_ids: Optional[list[int]], limit: int) -> list[int]:
+
+def _prefilter_chunk_ids(
+    con: sqlite3.Connection, query: str, doc_ids: Optional[list[int]], limit: int
+) -> list[int]:
     q = (query or "").strip()
     if not q:
         return []
@@ -696,9 +1068,16 @@ def _prefilter_chunk_ids(con: sqlite3.Connection, query: str, doc_ids: Optional[
         params2 = params + [safe2, int(limit)]
         return [int(r[0]) for r in con.execute(sql, params2).fetchall()]
 
-def _load_candidates(con: sqlite3.Connection, doc_ids: Optional[list[int]], chunk_ids: Optional[list[int]]):
+
+def _load_candidates(
+    con: sqlite3.Connection,
+    doc_ids: Optional[list[int]],
+    chunk_ids: Optional[list[int]],
+):
     cols_docs = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
-    cols_chunks = {r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()}
+    cols_chunks = {
+        r["name"] for r in con.execute("PRAGMA table_info(chunks);").fetchall()
+    }
 
     select_cols = [
         "c.id",
@@ -710,9 +1089,11 @@ def _load_candidates(con: sqlite3.Connection, doc_ids: Optional[list[int]], chun
         "d.filename",
         "d.weight",
     ]
+    if "group_name" in cols_docs:
+        select_cols.append("d.group_name")
     if "section" in cols_chunks:
         select_cols.append("c.section")
-    for col in ("source", "title", "author", "path", "meta_json"):
+    for col in ("source", "title", "author", "path", "meta_json", "tags_json"):
         if col in cols_docs:
             select_cols.append(f"d.{col}")
 
@@ -720,21 +1101,27 @@ def _load_candidates(con: sqlite3.Connection, doc_ids: Optional[list[int]], chun
 
     if chunk_ids:
         qs = ",".join("?" for _ in chunk_ids)
-        return con.execute(f"""
+        return con.execute(
+            f"""
           SELECT {sel}
             FROM chunks c
             JOIN docs d ON d.id=c.doc_id
            WHERE c.id IN ({qs})
-        """, tuple(chunk_ids)).fetchall()
+        """,
+            tuple(chunk_ids),
+        ).fetchall()
 
     if doc_ids:
         qs = ",".join("?" for _ in doc_ids)
-        return con.execute(f"""
+        return con.execute(
+            f"""
           SELECT {sel}
             FROM chunks c
             JOIN docs d ON d.id=c.doc_id
            WHERE c.doc_id IN ({qs})
-        """, tuple(doc_ids)).fetchall()
+        """,
+            tuple(doc_ids),
+        ).fetchall()
 
     return con.execute(f"""
       SELECT {sel}
@@ -742,19 +1129,25 @@ def _load_candidates(con: sqlite3.Connection, doc_ids: Optional[list[int]], chun
         JOIN docs d ON d.id=c.doc_id
     """).fetchall()
 
+
 def _cap_per_doc(rows, cap: int):
-    if cap <= 0: return rows
+    if cap <= 0:
+        return rows
     out: list[Any] = []
     seen: dict[int, int] = {}
     for r in rows:
         did = int(r["doc_id"])
         n = seen.get(did, 0)
-        if n >= cap: continue
+        if n >= cap:
+            continue
         seen[did] = n + 1
         out.append(r)
     return out
 
-def _mmr_select(scored: list[dict[str, Any]], k: int, lam: float) -> list[dict[str, Any]]:
+
+def _mmr_select(
+    scored: list[dict[str, Any]], k: int, lam: float
+) -> list[dict[str, Any]]:
     if not scored:
         return []
     k = max(1, min(k, len(scored)))
@@ -765,8 +1158,9 @@ def _mmr_select(scored: list[dict[str, Any]], k: int, lam: float) -> list[dict[s
     used = {scored[0]["chunk_id"]}
 
     def sim(a: list[float], b: list[float]) -> float:
-        an = _norm(a); bn = _norm(b)
-        return _dot(a,b) / (an*bn + 1e-12)
+        an = _norm(a)
+        bn = _norm(b)
+        return _dot(a, b) / (an * bn + 1e-12)
 
     while len(picked) < k:
         best = None
@@ -786,18 +1180,23 @@ def _mmr_select(scored: list[dict[str, Any]], k: int, lam: float) -> list[dict[s
         used.add(best["chunk_id"])
     return picked
 
+
 async def retrieve(
     query: str,
     top_k: int = 6,
     doc_ids: Optional[list[int]] = None,
     group_name: str | None = None,
     source: str | None = None,
+    exclude_group_names: Optional[list[str]] = None,
+    exclude_sources: Optional[list[str]] = None,
+    include_tags: Optional[list[str]] = None,
+    exclude_tags: Optional[list[str]] = None,
     embed_model: str | None = None,
     use_mmr: Optional[bool] = None,
     mmr_lambda: float = MMR_LAMBDA,
 ):
     top_k = max(1, min(int(top_k), MAX_TOP_K))
-    use_mmr = (USE_MMR_DEFAULT if use_mmr is None else bool(use_mmr))
+    use_mmr = USE_MMR_DEFAULT if use_mmr is None else bool(use_mmr)
 
     qv = (await embed_texts([query], embed_model))[0]
     qn = _norm(qv)
@@ -806,7 +1205,9 @@ async def retrieve(
     with _db() as con:
         # Optional doc scoping by group/source (used for epub/kiwix filtering).
         if (group_name or source) and not doc_ids:
-            cols_docs = {r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()}
+            cols_docs = {
+                r["name"] for r in con.execute("PRAGMA table_info(docs);").fetchall()
+            }
             where = []
             params: list[Any] = []
             if group_name:
@@ -837,6 +1238,55 @@ async def retrieve(
             return []
 
         rows = _load_candidates(con, doc_ids, chunk_ids)
+
+        # Optional exclusion filters (applied early to avoid scoring irrelevant collections).
+        ex_groups = {
+            str(x).strip() for x in (exclude_group_names or []) if str(x).strip()
+        }
+        ex_sources = {
+            str(x).strip().lower() for x in (exclude_sources or []) if str(x).strip()
+        }
+        if ex_groups or ex_sources:
+            filtered = []
+            for r in rows:
+                keys = set(r.keys())
+                if ex_groups and "group_name" in keys:
+                    g = str(r["group_name"] or "").strip()
+                    if g in ex_groups:
+                        continue
+                if ex_sources and "source" in keys:
+                    s = str(r["source"] or "").strip().lower()
+                    if s in ex_sources:
+                        continue
+                filtered.append(r)
+            rows = filtered
+
+        inc_tags = set(_normalize_tags(include_tags))
+        ex_tags = set(_normalize_tags(exclude_tags))
+        if inc_tags or ex_tags:
+            filtered = []
+            for r in rows:
+                keys = set(r.keys())
+                raw = r["tags_json"] if "tags_json" in keys else None
+                tags: list[str] = []
+                if isinstance(raw, str) and raw.strip():
+                    try:
+                        val = json.loads(raw)
+                        if isinstance(val, list):
+                            tags = [
+                                str(x).strip().lower() for x in val if str(x).strip()
+                            ]
+                    except Exception:
+                        tags = []
+
+                tagset = set(tags)
+                if ex_tags and tagset.intersection(ex_tags):
+                    continue
+                if inc_tags and not tagset.intersection(inc_tags):
+                    continue
+                filtered.append(r)
+            rows = filtered
+
         rows = _cap_per_doc(rows, PER_DOC_CAP)
 
         scored: list[dict[str, Any]] = []
@@ -846,8 +1296,10 @@ async def retrieve(
                 continue
             base = _cosine(qv, qn, v, float(r["norm"]))
             weight = float(r["weight"] if r["weight"] is not None else 1.0)
-            if weight < 0.0: weight = 0.0
-            if weight > 5.0: weight = 5.0
+            if weight < 0.0:
+                weight = 0.0
+            if weight > 5.0:
+                weight = 5.0
 
             score = base * weight
 
@@ -864,9 +1316,13 @@ async def retrieve(
             keys = set(r.keys())
             if "section" in keys:
                 item["section"] = r["section"]
+            if "group_name" in keys:
+                item["group_name"] = r["group_name"]
             for col in ("source", "title", "author", "path", "meta_json"):
                 if col in keys:
                     item[col] = r[col]
+            if "tags_json" in keys:
+                item["tags_json"] = r["tags_json"]
             scored.append(item)
 
     scored.sort(key=lambda x: x["score"], reverse=True)

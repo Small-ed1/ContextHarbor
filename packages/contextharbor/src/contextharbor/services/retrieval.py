@@ -3,10 +3,42 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 from typing import Any, Optional
 
 from ..stores import ragstore, webstore
 from . import kiwix
+
+
+_WORD = re.compile(r"[a-z0-9]{3,}")
+
+
+def _kw_terms(q: str) -> list[str]:
+    terms = _WORD.findall((q or "").lower())
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in terms:
+        if t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+        if len(out) >= 24:
+            break
+    return out
+
+
+def _kw_score(terms: list[str], text: str) -> float:
+    if not terms:
+        return 0.0
+    hay = (text or "").lower()
+    score = 0.0
+    for t in terms:
+        if t not in hay:
+            continue
+        # Bounded occurrence count to avoid huge pages dominating.
+        score += float(min(hay.count(t), 6))
+    return score / float(len(terms) or 1)
 
 
 @dataclass
@@ -38,18 +70,36 @@ class DocRetrievalProvider(RetrievalProvider):
         mmr_lambda = kwargs.get("mmr_lambda", 0.75)
         group_name = kwargs.get("group_name")
         source = kwargs.get("source")
+        exclude_group_names = kwargs.get("exclude_group_names")
+        exclude_sources = kwargs.get("exclude_sources")
+        include_tags = kwargs.get("include_tags")
+        exclude_tags = kwargs.get("exclude_tags")
         hits = await ragstore.retrieve(
             query,
             top_k=top_k,
             doc_ids=doc_ids,
             group_name=group_name,
             source=source,
+            exclude_group_names=exclude_group_names,
+            exclude_sources=exclude_sources,
+            include_tags=include_tags,
+            exclude_tags=exclude_tags,
             embed_model=embed_model,
             use_mmr=use_mmr,
             mmr_lambda=mmr_lambda,
         )
         results = []
         for h in hits:
+            tags: list[str] = []
+            raw_tags = h.get("tags_json")
+            if isinstance(raw_tags, str) and raw_tags.strip():
+                try:
+                    val = json.loads(raw_tags)
+                    if isinstance(val, list):
+                        tags = [str(x).strip().lower() for x in val if str(x).strip()]
+                except Exception:
+                    tags = []
+
             doc_title = h.get("title") or h.get("filename")
             section = h.get("section")
             display = doc_title
@@ -69,12 +119,14 @@ class DocRetrievalProvider(RetrievalProvider):
                         "doc_id": h.get("doc_id"),
                         "chunk_index": h.get("chunk_index"),
                         "doc_weight": h.get("doc_weight", 1.0),
+                        "group_name": h.get("group_name"),
                         "filename": h.get("filename"),
                         "title": h.get("title"),
                         "author": h.get("author"),
                         "path": h.get("path"),
                         "source": h.get("source"),
                         "section": h.get("section"),
+                        "tags": tags,
                     },
                 )
             )
@@ -150,32 +202,58 @@ class KiwixRetrievalProvider(RetrievalProvider):
             if not pages_meta:
                 return []
 
-            query_emb = (await ragstore.embed_texts([q], model=embed_model))[0]
-            qvec = ragstore.embedding_to_array(query_emb)
-            texts: list[str] = [str(p.get("text") or "") for p in pages_meta]
-            embeddings = await ragstore.embed_texts(texts, model=embed_model)
+            # Prefer embedding similarity when available; fall back to keyword scoring if embeddings fail.
+            try:
+                query_emb = (await ragstore.embed_texts([q], model=embed_model))[0]
+                qvec = ragstore.embedding_to_array(query_emb)
+                texts: list[str] = [str(p.get("text") or "") for p in pages_meta]
+                embeddings = await ragstore.embed_texts(texts, model=embed_model)
 
-            items: list[RetrievalResult] = []
-            for meta, emb in zip(pages_meta, embeddings):
-                vec = ragstore.embedding_to_array(emb)
-                score = float(ragstore.cosine(qvec, vec))
-                url = str(meta.get("url") or "")
-                chunk_id = int(hashlib.sha256(url.encode("utf-8", errors="ignore")).hexdigest()[:12], 16)
-                items.append(
-                    RetrievalResult(
-                        source_type="kiwix",
-                        ref_id=f"kiwix:{chunk_id}",
-                        chunk_id=chunk_id,
-                        title=meta.get("title"),
-                        url=meta.get("url"),
-                        domain=meta.get("domain"),
-                        score=score,
-                        text=meta.get("text") or "",
-                        meta={"path": meta.get("path")},
+                items: list[RetrievalResult] = []
+                for meta, emb in zip(pages_meta, embeddings):
+                    vec = ragstore.embedding_to_array(emb)
+                    score = float(ragstore.cosine(qvec, vec))
+                    url = str(meta.get("url") or "")
+                    chunk_id = int(hashlib.sha256(url.encode("utf-8", errors="ignore")).hexdigest()[:12], 16)
+                    items.append(
+                        RetrievalResult(
+                            source_type="kiwix",
+                            ref_id=f"kiwix:{chunk_id}",
+                            chunk_id=chunk_id,
+                            title=meta.get("title"),
+                            url=meta.get("url"),
+                            domain=meta.get("domain"),
+                            score=score,
+                            text=meta.get("text") or "",
+                            meta={"path": meta.get("path")},
+                        )
                     )
-                )
-            items.sort(key=lambda x: x.score, reverse=True)
-            return items[:top_k]
+                items.sort(key=lambda x: x.score, reverse=True)
+                return items[:top_k]
+            except Exception:
+                # Embeddings unavailable: do a cheap lexical score (still returns real page text for quoting).
+                qterms = _kw_terms(q)
+                items2: list[RetrievalResult] = []
+                for meta in pages_meta:
+                    text = str(meta.get("text") or "")
+                    score = float(_kw_score(qterms, text))
+                    url = str(meta.get("url") or "")
+                    chunk_id = int(hashlib.sha256(url.encode("utf-8", errors="ignore")).hexdigest()[:12], 16)
+                    items2.append(
+                        RetrievalResult(
+                            source_type="kiwix",
+                            ref_id=f"kiwix:{chunk_id}",
+                            chunk_id=chunk_id,
+                            title=meta.get("title"),
+                            url=meta.get("url"),
+                            domain=meta.get("domain"),
+                            score=score,
+                            text=text,
+                            meta={"path": meta.get("path"), "score_mode": "keyword"},
+                        )
+                    )
+                items2.sort(key=lambda x: x.score, reverse=True)
+                return items2[:top_k]
 
         # Index-on-demand: fetch a handful of pages, ingest into SQLite, then vector-search them.
         ingested_doc_ids: list[int] = []
@@ -200,6 +278,7 @@ class KiwixRetrievalProvider(RetrievalProvider):
                 path=url or path,
                 meta_json=meta_json,
                 group_name="kiwix",
+                tags=["kiwix", "wiki"],
             )
             ingested_doc_ids.append(int(doc_id))
 
